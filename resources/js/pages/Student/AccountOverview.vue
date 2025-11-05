@@ -1,0 +1,527 @@
+<script setup lang="ts">
+import { ref, computed, watch, onMounted } from 'vue'
+import { Head, Link, useForm } from '@inertiajs/vue3'
+import AppLayout from '@/layouts/AppLayout.vue'
+import Breadcrumbs from '@/components/Breadcrumbs.vue'
+import { CreditCard, Calendar, CheckCircle, XCircle } from 'lucide-vue-next'
+
+type Fee = {
+  name: string
+  amount: number
+  category?: string
+}
+
+type Transaction = {
+  id: number
+  reference: string
+  type: string
+  kind: string
+  amount: number
+  status: string
+  created_at: string
+  fee?: {
+    name: string
+    category: string
+  }
+  meta?: {
+    fee_name?: string
+    description?: string
+  }
+}
+
+type Account = {
+  id: number
+  balance: number
+  user_id: number
+}
+
+type CurrentTerm = {
+  year: number
+  semester: string
+}
+
+const props = withDefaults(defineProps<{
+  account: Account
+  transactions: Transaction[]
+  fees: Fee[]
+  currentTerm?: CurrentTerm
+  tab?: string
+}>(), {
+  currentTerm: () => ({
+    year: new Date().getFullYear(),
+    semester: '1st Sem'
+  }),
+  tab: 'fees'
+})
+
+const breadcrumbs = [
+  { title: 'Dashboard', href: route('dashboard') },
+  { title: 'My Account' },
+]
+
+// Get tab from URL if prop is not working
+const getTabFromUrl = (): 'fees' | 'history' | 'payment' => {
+  const urlParams = new URLSearchParams(window.location.search)
+  const tab = urlParams.get('tab')
+  
+  if (tab === 'payment') return 'payment'
+  if (tab === 'history') return 'history'
+  return 'fees'
+}
+
+// Set initial tab - try prop first, then URL
+const getInitialTab = (): 'fees' | 'history' | 'payment' => {
+  // First try the prop
+  if (props.tab === 'payment' || props.tab === 'history') {
+    return props.tab
+  }
+  
+  // Fallback to URL parsing
+  return getTabFromUrl()
+}
+
+const activeTab = ref<'fees' | 'history' | 'payment'>(getInitialTab())
+
+// Watch for prop changes (in case of navigation)
+watch(() => props.tab, (newTab) => {
+  if (newTab === 'payment' || newTab === 'history') {
+    activeTab.value = newTab
+  }
+})
+
+// Ensure correct tab on mount
+onMounted(() => {
+  const urlTab = getTabFromUrl()
+  if (urlTab === 'payment' || urlTab === 'history') {
+    activeTab.value = urlTab
+  }
+})
+
+const paymentForm = useForm({
+  amount: 0,
+  payment_method: 'cash',
+  reference_number: '',
+  paid_at: new Date().toISOString().split('T')[0],
+  description: 'Payment for fees',
+})
+
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+  }).format(amount)
+}
+
+const totalAssessmentFee = computed(() => {
+  return props.fees.reduce((sum, fee) => sum + Number(fee.amount), 0)
+})
+
+const totalPaid = computed(() => {
+  return props.transactions
+    .filter(t => t.kind === 'payment' && t.status === 'paid')
+    .reduce((sum, t) => sum + Number(t.amount), 0)
+})
+
+// Robust calculation: compute from transactions regardless of backend sign convention
+const remainingBalance = computed(() => {
+  // Defensive: ensure props.transactions exists
+  const txs = props.transactions ?? []
+
+  const charges = txs
+    .filter(t => t.kind === 'charge')
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+
+  const payments = txs
+    .filter(t => t.kind === 'payment' && t.status === 'paid')
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+
+  // positive when charges > payments → amount owed
+  const diff = charges - payments
+
+  // Round to avoid floating point issues
+  const rounded = Math.round(diff * 100) / 100
+
+  return rounded > 0 ? rounded : 0
+})
+
+// Calculate payables schedule based on the actual payment structure
+const payablesSchedule = computed(() => {
+  const total = totalAssessmentFee.value
+  
+  // Calculate based on percentages from the example:
+  // Upon Registration: 32.38% (4180/12904)
+  // Prelim: 20.28% (2617.2/12904)
+  // Midterm: 20.28% (2617.2/12904)
+  // Semi-Final: 16.90% (2181/12904)
+  // Final: 10.14% (1308.6/12904)
+  
+  const uponRegistration = total * 0.3238
+  const prelim = total * 0.2028
+  const midterm = total * 0.2028
+  const semiFinal = total * 0.1690
+  const final = total * 0.1014
+  
+  return [
+    { name: 'Upon Registration', amount: uponRegistration },
+    { name: 'Prelim', amount: prelim },
+    { name: 'Midterm', amount: midterm },
+    { name: 'Semi-Final', amount: semiFinal },
+    { name: 'Final', amount: final },
+  ]
+})
+
+const paymentHistory = computed(() => {
+  return props.transactions
+    .filter(t => t.kind === 'payment')
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+})
+
+const pendingCharges = computed(() => {
+  return props.transactions
+    .filter(t => t.kind === 'charge' && t.status === 'pending')
+})
+
+const canSubmitPayment = computed(() => {
+  return remainingBalance.value > 0 && paymentForm.amount > 0
+})
+
+const submitPayment = () => {
+  // Validate amount
+  if (paymentForm.amount <= 0) {
+    paymentForm.setError('amount', 'Amount must be greater than zero')
+    return
+  }
+
+  if (paymentForm.amount > remainingBalance.value) {
+    paymentForm.setError('amount', 'Amount cannot exceed remaining balance')
+    return
+  }
+
+  paymentForm.post(route('account.pay-now'), {
+    preserveScroll: true,
+    onSuccess: () => {
+      // Reset form after successful payment
+      paymentForm.reset()
+      paymentForm.amount = 0
+      paymentForm.payment_method = 'cash'
+      paymentForm.reference_number = ''
+      paymentForm.paid_at = new Date().toISOString().split('T')[0]
+      paymentForm.description = 'Payment for fees'
+      
+      // Switch to payment history tab to see the new payment
+      activeTab.value = 'history'
+    },
+    onError: (errors) => {
+      console.error('Payment errors:', errors)
+    },
+  })
+}
+</script>
+
+<template>
+  <AppLayout>
+    <Head title="My Account" />
+
+    <div class="w-full p-6">
+      <Breadcrumbs :items="breadcrumbs" />
+
+      <!-- Header -->
+      <div class="mb-6">
+        <h1 class="text-3xl font-bold">My Account Overview</h1>
+        <p v-if="currentTerm" class="text-gray-600 mt-1">
+          {{ currentTerm.semester }} - {{ currentTerm.year }}-{{ currentTerm.year + 1 }}
+        </p>
+      </div>
+
+      <!-- Balance Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <!-- Total Assessment -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h3 class="text-sm font-medium text-gray-600 mb-2">Total Assessment Fee</h3>
+          <p class="text-3xl font-bold text-blue-600">{{ formatCurrency(totalAssessmentFee) }}</p>
+        </div>
+
+        <!-- Total Paid -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h3 class="text-sm font-medium text-gray-600 mb-2">Total Paid</h3>
+          <p class="text-3xl font-bold text-green-600">{{ formatCurrency(totalPaid) }}</p>
+        </div>
+
+        <!-- Current Balance -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h3 class="text-sm font-medium text-gray-600 mb-2">Current Balance</h3>
+          <p class="text-3xl font-bold" :class="remainingBalance > 0 ? 'text-red-600' : 'text-green-600'">
+            {{ formatCurrency(remainingBalance) }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="bg-white rounded-lg shadow-md mb-6">
+        <div class="border-b">
+          <nav class="flex gap-4 px-6">
+            <button
+              @click="activeTab = 'fees'"
+              :class="[
+                'py-4 px-2 border-b-2 font-medium text-sm transition-colors',
+                activeTab === 'fees'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700',
+              ]"
+            >
+              Fees & Payables
+            </button>
+            <button
+              @click="activeTab = 'history'"
+              :class="[
+                'py-4 px-2 border-b-2 font-medium text-sm transition-colors',
+                activeTab === 'history'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700',
+              ]"
+            >
+              Payment History
+            </button>
+            <button
+              @click="activeTab = 'payment'"
+              :class="[
+                'py-4 px-2 border-b-2 font-medium text-sm transition-colors',
+                activeTab === 'payment'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700',
+              ]"
+            >
+              Make Payment
+            </button>
+          </nav>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="p-6">
+          <!-- Fees Tab -->
+          <div v-if="activeTab === 'fees'">
+            <h2 class="text-lg font-semibold mb-4">FEES</h2>
+            
+            <div v-if="fees.length" class="space-y-2">
+              <div
+                v-for="(fee, index) in fees"
+                :key="index"
+                class="flex justify-between py-2"
+              >
+                <span class="text-gray-700">{{ fee.name }}</span>
+                <span class="font-medium">{{ formatCurrency(fee.amount) }}</span>
+              </div>
+
+              <div class="flex justify-between font-semibold border-t-2 pt-3 mt-3 text-lg">
+                <span>Total Assessment Fee</span>
+                <span class="text-blue-600">{{ formatCurrency(totalAssessmentFee) }}</span>
+              </div>
+            </div>
+
+            <p v-else class="text-gray-500 text-center py-4">
+              No fees assigned yet.
+            </p>
+
+            <!-- Terms of Payment -->
+            <div v-if="fees.length" class="mt-8 border-t pt-6">
+              <h3 class="text-md font-semibold mb-4">TERMS OF PAYMENT</h3>
+              <div class="bg-gray-50 rounded-lg p-4">
+                <ul class="space-y-2">
+                  <li
+                    v-for="payable in payablesSchedule"
+                    :key="payable.name"
+                    class="flex justify-between text-sm"
+                  >
+                    <span class="text-gray-700">{{ payable.name }}</span>
+                    <span class="font-medium text-gray-900">{{ formatCurrency(payable.amount) }}</span>
+                  </li>
+                </ul>
+              </div>
+              <p class="text-xs text-gray-500 mt-3 italic">
+                * Payment schedule follows CCDI's standard payment structure
+              </p>
+            </div>
+
+            <!-- Pending Charges -->
+            <div v-if="pendingCharges.length" class="mt-8 border-t pt-6">
+              <h3 class="text-md font-semibold mb-4 text-red-700">PENDING CHARGES</h3>
+              <div class="space-y-3">
+                <div
+                  v-for="charge in pendingCharges"
+                  :key="charge.id"
+                  class="flex justify-between items-center p-3 bg-red-50 rounded border border-red-200"
+                >
+                  <div>
+                    <p class="font-medium text-gray-900">
+                      {{ charge.fee?.name || charge.meta?.fee_name || charge.type }}
+                    </p>
+                    <p class="text-xs text-gray-600">{{ charge.reference }}</p>
+                  </div>
+                  <div class="text-right">
+                    <p class="text-lg font-semibold text-red-600">{{ formatCurrency(charge.amount) }}</p>
+                    <span class="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded">Pending</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Payment History Tab -->
+          <div v-if="activeTab === 'history'">
+            <h2 class="text-lg font-semibold mb-4">Payment History</h2>
+            
+            <div v-if="paymentHistory.length" class="space-y-3">
+              <div
+                v-for="payment in paymentHistory"
+                :key="payment.id"
+                class="flex justify-between items-center p-4 border rounded-lg hover:bg-gray-50"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="p-2 bg-green-100 rounded">
+                    <CheckCircle :size="20" class="text-green-600" />
+                  </div>
+                  <div>
+                    <p class="font-medium text-gray-900">{{ payment.meta?.description || payment.type }}</p>
+                    <p class="text-sm text-gray-600">
+                      {{ new Date(payment.created_at).toLocaleDateString() }}
+                    </p>
+                    <p class="text-xs text-gray-500">{{ payment.reference }}</p>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <p class="text-lg font-semibold text-green-600">{{ formatCurrency(payment.amount) }}</p>
+                  <span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded">
+                    {{ payment.status }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="text-center py-12">
+              <XCircle :size="48" class="text-gray-400 mx-auto mb-3" />
+              <p class="text-gray-500">No payment history yet</p>
+            </div>
+          </div>
+
+          <!-- Payment Form Tab -->
+          <div v-if="activeTab === 'payment'">
+            <h2 class="text-2xl font-bold mb-6">Add New Payment</h2>
+            
+            <!-- No Balance Message -->
+            <div v-if="remainingBalance <= 0" class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div class="flex items-center gap-2">
+                <CheckCircle :size="20" class="text-green-600" />
+                <p class="text-green-800 font-medium">You have no outstanding balance!</p>
+              </div>
+              <p class="text-sm text-green-700 mt-1">All fees have been paid in full.</p>
+            </div>
+
+            <form @submit.prevent="submitPayment">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Amount -->
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                  <input
+                    v-model="paymentForm.amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    :max="remainingBalance"
+                    placeholder="0.00"
+                    required
+                    :disabled="remainingBalance <= 0"
+                    class="w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  />
+                  <p class="text-xs text-gray-500 mt-1">
+                    Maximum: {{ formatCurrency(remainingBalance) }}
+                  </p>
+                  <div v-if="paymentForm.errors.amount" class="text-red-500 text-sm mt-1">
+                    {{ paymentForm.errors.amount }}
+                  </div>
+                </div>
+
+                <!-- Payment Method -->
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                  <select
+                    v-model="paymentForm.payment_method"
+                    :disabled="remainingBalance <= 0"
+                    class="w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="gcash">GCash</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="credit_card">Credit Card</option>
+                    <option value="debit_card">Debit Card</option>
+                  </select>
+                  <div v-if="paymentForm.errors.payment_method" class="text-red-500 text-sm mt-1">
+                    {{ paymentForm.errors.payment_method }}
+                  </div>
+                </div>
+
+                <!-- Reference Number (System Generated - Disabled) -->
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Reference Number
+                    <span class="text-xs text-gray-500">(Auto-generated)</span>
+                  </label>
+                  <input
+                    value="System will generate after submission"
+                    disabled
+                    class="w-full px-4 py-2 border rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-gray-500"
+                  />
+                  <p class="text-xs text-gray-500 mt-1">
+                    Reference number will be automatically generated
+                  </p>
+                </div>
+
+                <!-- Payment Date -->
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
+                  <input
+                    v-model="paymentForm.paid_at"
+                    type="date"
+                    required
+                    :disabled="remainingBalance <= 0"
+                    class="w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  />
+                  <div v-if="paymentForm.errors.paid_at" class="text-red-500 text-sm mt-1">
+                    {{ paymentForm.errors.paid_at }}
+                  </div>
+                </div>
+
+                <!-- Description -->
+                <div class="md:col-span-2">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <input
+                    v-model="paymentForm.description"
+                    placeholder="Payment description"
+                    required
+                    :disabled="remainingBalance <= 0"
+                    class="w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  />
+                  <div v-if="paymentForm.errors.description" class="text-red-500 text-sm mt-1">
+                    {{ paymentForm.errors.description }}
+                  </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="md:col-span-2">
+                  <button
+                    type="submit"
+                    class="w-full px-5 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-400"
+                    :disabled="!canSubmitPayment || paymentForm.processing"
+                  >
+                    <span v-if="paymentForm.processing">Processing...</span>
+                    <span v-else-if="remainingBalance <= 0">No Balance to Pay</span>
+                    <span v-else>Record Payment</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </AppLayout>
+</template>

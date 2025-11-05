@@ -1,0 +1,93 @@
+<?php
+
+namespace App\Http\Requests\Settings;
+
+use App\Models\User;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class ProfileUpdateRequest extends FormRequest
+{
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     */
+    public function rules(): array
+    {
+        $user = $this->user();
+        
+        // Base rules for all users
+        $rules = [
+            'last_name' => ['required', 'string', 'max:255'],
+            'first_name' => ['required', 'string', 'max:255'],
+            'middle_initial' => ['nullable', 'string', 'max:10'],
+            'email' => [
+                'required',
+                'string',
+                'lowercase',
+                'email',
+                'max:255',
+                Rule::unique(User::class)->ignore($user->id),
+            ],
+            'birthday' => ['nullable', 'date', 'before:today', 'after:1900-01-01'],
+            'phone' => ['nullable', 'string', 'max:20', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
+            'address' => ['nullable', 'string', 'max:500'],
+        ];
+
+        // Add student-specific fields
+        if ($user->role === 'student' || $this->input('role') === 'student') {
+            $rules['student_id'] = [
+                'nullable',
+                'string',
+                'max:50',
+                Rule::unique('users', 'student_id')->ignore($user->id),
+            ];
+            $rules['course'] = ['required', 'string', 'max:255'];
+            $rules['year_level'] = ['required', 'string', 'max:50', 'in:1st Year,2nd Year,3rd Year,4th Year'];
+            
+            // Only admin can change student status
+            if (optional($this->user())->role === 'admin') {
+                $rules['status'] = ['nullable', Rule::in(['active', 'graduated', 'dropped'])];
+            }
+        }
+
+        // Add faculty field for accounting/admin users
+        if (in_array($user->role, ['accounting', 'admin'])) {
+            $rules['faculty'] = ['nullable', 'string', 'max:255'];
+        }
+
+        return $rules;
+    }
+
+    /**
+     * Get custom attributes for validator errors.
+     *
+     * @return array<string, string>
+     */
+    public function attributes(): array
+    {
+        return [
+            'last_name' => 'last name',
+            'first_name' => 'first name',
+            'middle_initial' => 'middle initial',
+            'student_id' => 'student ID',
+            'year_level' => 'year level',
+        ];
+    }
+
+    /**
+     * Get custom messages for validator errors.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'phone.regex' => 'The phone number format is invalid.',
+            'birthday.before' => 'The birthday must be a date before today.',
+            'email.unique' => 'This email address is already in use.',
+            'student_id.unique' => 'This student ID is already in use.',
+        ];
+    }
+}

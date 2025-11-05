@@ -1,0 +1,175 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Student;
+use App\Models\Payment;
+use App\Models\Fee;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+
+class StudentController extends Controller
+{
+    // Display all students
+    public function index(Request $request)
+    {
+        $query = Student::with(['payments', 'transactions', 'account']);
+
+        // Enhanced search functionality
+        if ($request->filled('search')) {
+            $searchTerm = $request->search;
+            
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'like', '%' . $searchTerm . '%')
+                  ->orWhere('email', 'like', '%' . $searchTerm . '%')
+                  ->orWhere('student_id', 'like', '%' . $searchTerm . '%')
+                  ->orWhere('course', 'like', '%' . $searchTerm . '%')
+                  ->orWhere('year_level', 'like', '%' . $searchTerm . '%')
+                  ->orWhere('phone', 'like', '%' . $searchTerm . '%')
+                  ->orWhere('address', 'like', '%' . $searchTerm . '%');
+            });
+        }
+
+        $students = $query->orderBy('created_at', 'desc')->paginate(10);
+
+        // Try to load fees from DB, otherwise fallback defaults
+        if (class_exists(Fee::class) && Fee::count() > 0) {
+            $fees = Fee::select('name', 'amount')->get();
+        } else {
+            $fees = collect([
+                ['name' => 'Registration Fee', 'amount' => 0.0],
+                ['name' => 'Tuition Fee', 'amount' => 1092.0],
+                ['name' => 'Lab Fee', 'amount' => 2256.0],
+                ['name' => 'Misc. Fee', 'amount' => 4700.0],
+            ]);
+        }
+
+        return Inertia::render('Students/Index', [
+            'students' => $students,
+            'filters'  => $request->only('search'),
+            'fees'     => $fees->values(), // pass fee breakdown
+        ]);
+    }
+
+    // Show create student form
+    public function create()
+    {
+        return Inertia::render('Students/Create');
+    }
+
+    // Store new student
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'student_id' => 'required|string|unique:students,student_id',
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:students,email',
+            'course' => 'required|string|max:255',
+            'year_level' => 'required|string',
+            'birthday' => 'nullable|date',
+            'phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:500',
+            'total_balance' => 'required|numeric|min:0',
+        ]);
+
+        Student::create($validated);
+
+        return redirect()->route('students.index')->with('success', 'Student created successfully!');
+    }
+
+    // Show single student  
+    public function show($id)
+    {
+        $student = Student::with(['payments', 'user.account'])->findOrFail($id);
+
+        return Inertia::render('Students/StudentProfile', [
+            'student' => $student,
+        ]);
+    }
+
+
+    // Store payment for student
+    public function storePayment(Request $request, Student $student)
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'description' => 'required|string|max:255',
+            'payment_method' => 'required|string',
+            'reference_number' => 'nullable|string',
+            'status' => 'required|string',
+            'paid_at' => 'required|date',
+        ]);
+
+        $user = $request->user();
+
+        // Student can only pay for their own record
+        if ($user->role === 'student') {
+            if (!$user->student || $user->student->id !== $student->id) {
+                abort(403, 'Unauthorized payment submission.');
+            }
+        }
+
+        $student->payments()->create($request->only([
+            'amount', 'description', 'payment_method', 'reference_number', 'status', 'paid_at'
+        ]));
+
+        return back()->with('success', 'Payment recorded successfully!');
+    }
+
+
+    // Delete student
+    public function destroy(Student $student)
+    {
+        $student->delete();
+        return redirect()->route('students.index')->with('success', 'Student deleted successfully!');
+    }
+
+    // Show edit form
+    public function edit(Student $student)
+    {
+        return Inertia::render('Students/Edit', [
+            'student' => $student,
+        ]);
+    }
+
+    // Update student
+    public function update(Request $request, Student $student)
+    {
+        $validated = $request->validate([
+            'student_id' => 'required|string|unique:students,student_id,' . $student->id,
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:students,email,' . $student->id,
+            'course' => 'required|string|max:255',
+            'year_level' => 'required|string',
+            'birthday' => 'nullable|date',
+            'phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:500',
+            'total_balance' => 'required|numeric|min:0',
+        ]);
+
+        $student->update($validated);
+
+        return redirect()->route('students.index')->with('success', 'Student updated successfully!');
+    }
+
+    public function studentProfile(Request $request)
+    {
+        $user = $request->user();
+
+        if ($user->role === 'student') {
+            // Student sees their own profile
+            $student = Student::where('email', $user->email)->firstOrFail();
+        } else {
+            // Admin/accounting can choose which student to view
+            // Example: load the first one or redirect
+            $student = Student::with('payments')->first(); 
+            // Or you could redirect them to /students for selection
+        }
+
+        $student->load('payments');
+
+        return Inertia::render('Students/StudentProfile', [
+            'student' => $student,
+        ]);
+    }
+}
