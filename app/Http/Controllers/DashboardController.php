@@ -12,26 +12,34 @@ class DashboardController extends Controller
     {
         $user = auth()->user();
 
-        // Redirect students to their specialized dashboard
-        if ($user->role->value === 'student') {
-            return redirect()->route('student.dashboard');
+        // Redirect users to their role-specific dashboards
+        switch ($user->role->value) {
+            case 'student':
+                return redirect()->route('student.dashboard');
+            
+            case 'accounting':
+                return redirect()->route('accounting.dashboard');
+            
+            case 'admin':
+                return redirect()->route('admin.dashboard');
+            
+            default:
+                // Fallback for any other roles
+                $notifications = Notification::query()
+                    ->where(function ($q) use ($user) {
+                        $q->where('target_role', $user->role->value)
+                          ->orWhere('target_role', 'all');
+                    })
+                    ->orderByDesc('start_date')
+                    ->take(5)
+                    ->get();
+
+                return Inertia::render('Dashboard', [
+                    'notifications' => $notifications,
+                    'auth' => [
+                        'user' => $user,
+                    ],
+                ]);
         }
-
-        // For admin/accounting, show general dashboard
-        $notifications = Notification::query()
-            ->where(function ($q) use ($user) {
-                $q->where('target_role', $user->role->value)
-                  ->orWhere('target_role', 'all');
-            })
-            ->orderByDesc('start_date')
-            ->take(5)
-            ->get();
-
-        return Inertia::render('Dashboard', [
-            'notifications' => $notifications,
-            'auth' => [
-                'user' => $user,
-            ],
-        ]);
     }
 }
