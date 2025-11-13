@@ -81,18 +81,11 @@ class StudentFeeController extends Controller
      */
     public function create(Request $request)
     {
-        $studentId = $request->query('student_id');
-        $student = null;
-
-        if ($studentId) {
-            $student = User::with(['student', 'account'])
-                ->where('role', 'student')
-                ->findOrFail($studentId);
-        }
-
-        // Get available subjects for the student's course and year level
-        $subjects = [];
-        if ($student) {
+        // If this is an AJAX request for getting student data
+        if ($request->has('get_data') && $request->has('student_id')) {
+            $student = User::where('role', 'student')->findOrFail($request->student_id);
+            
+            // Get subjects for this student
             $subjects = Subject::active()
                 ->where('course', $student->course)
                 ->where('year_level', $student->year_level)
@@ -109,18 +102,41 @@ class StudentFeeController extends Controller
                         'total_cost' => $subject->total_cost,
                     ];
                 });
+
+            // Get fees
+            $fees = Fee::active()
+                ->whereIn('category', ['Laboratory', 'Library', 'Athletic', 'Miscellaneous'])
+                ->get()
+                ->map(function ($fee) {
+                    return [
+                        'id' => $fee->id,
+                        'name' => $fee->name,
+                        'category' => $fee->category,
+                        'amount' => $fee->amount,
+                    ];
+                });
+
+            return response()->json([
+                'subjects' => $subjects,
+                'fees' => $fees,
+            ]);
         }
 
-        // Get available fees (other fees)
-        $fees = Fee::active()
-            ->whereIn('category', ['Laboratory', 'Library', 'Athletic', 'Miscellaneous'])
+        // Get all active students for selection
+        $students = User::where('role', 'student')
+            ->where('status', User::STATUS_ACTIVE)
+            ->orderBy('last_name')
+            ->orderBy('first_name')
             ->get()
-            ->map(function ($fee) {
+            ->map(function ($user) {
                 return [
-                    'id' => $fee->id,
-                    'name' => $fee->name,
-                    'category' => $fee->category,
-                    'amount' => $fee->amount,
+                    'id' => $user->id,
+                    'student_id' => $user->student_id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'course' => $user->course,
+                    'year_level' => $user->year_level,
+                    'status' => $user->status,
                 ];
             });
 
@@ -133,9 +149,7 @@ class StudentFeeController extends Controller
         ];
 
         return Inertia::render('StudentFees/Create', [
-            'student' => $student,
-            'subjects' => $subjects,
-            'fees' => $fees,
+            'students' => $students,
             'yearLevels' => $yearLevels,
             'semesters' => $semesters,
             'schoolYears' => $schoolYears,
