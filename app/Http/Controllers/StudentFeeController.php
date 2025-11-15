@@ -434,7 +434,32 @@ class StudentFeeController extends Controller
      */
     public function createStudent()
     {
-        return Inertia::render('StudentFees/CreateStudent');
+        // ✅ Get unique courses from existing students
+        $courses = User::where('role', 'student')
+            ->whereNotNull('course')
+            ->distinct()
+            ->pluck('course')
+            ->sort()
+            ->values();
+        
+        // ✅ If no students exist yet, provide default courses
+        if ($courses->isEmpty()) {
+            $courses = collect([
+                'BS Electrical Engineering Technology',
+                'BS Electronics Engineering Technology',
+                'BS Computer Science',
+                'BS Information Technology',
+                'BS Accountancy',
+                'BS Business Administration',
+            ]);
+        }
+        
+        $yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+        
+        return Inertia::render('StudentFees/CreateStudent', [
+            'courses' => $courses,
+            'yearLevels' => $yearLevels,
+        ]);
     }
 
     /**
@@ -447,12 +472,12 @@ class StudentFeeController extends Controller
             'first_name' => 'required|string|max:255',
             'middle_initial' => 'nullable|string|max:10',
             'email' => 'required|string|lowercase|email|max:255|unique:users',
-            'birthday' => 'required|date',
-            'year_level' => 'required|string|max:50',
-            'course' => 'required|string|max:255',
+            'birthday' => 'required|date|before:today|after:1900-01-01',
+            'year_level' => 'required|string|in:1st Year,2nd Year,3rd Year,4th Year',
+            'course' => 'required|string|max:255', // ✅ Allow any course from database
             'address' => 'required|string|max:255',
-            'phone' => 'required|string|max:20',
-            'student_id' => 'nullable|string|unique:users,student_id',
+            'phone' => 'required|string|max:20|regex:/^([0-9\s\-\+\(\)]*)$/',
+            'student_id' => 'nullable|string|max:50|unique:users,student_id',
         ]);
 
         DB::beginTransaction();
@@ -480,7 +505,7 @@ class StudentFeeController extends Controller
                 'first_name' => $validated['first_name'],
                 'middle_initial' => $validated['middle_initial'],
                 'email' => $validated['email'],
-                'password' => Hash::make('password'), // Default password
+                'password' => Hash::make('password'),
                 'birthday' => $validated['birthday'],
                 'year_level' => $validated['year_level'],
                 'course' => $validated['course'],
@@ -513,13 +538,20 @@ class StudentFeeController extends Controller
 
             DB::commit();
 
+            // Redirect to the student list with success message
+            // The student will IMMEDIATELY appear in:
+            // 1. The Student Fee Management list (index)
+            // 2. The Create Assessment student dropdown (create)
             return redirect()
                 ->route('student-fees.index')
-                ->with('success', 'Student added successfully!');
+                ->with('success', "Student {$user->name} (ID: {$user->student_id}) has been successfully added and is ready for assessment creation.");
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->withErrors(['error' => 'Failed to add student: ' . $e->getMessage()]);
+            
+            return back()
+                ->withInput()
+                ->withErrors(['error' => 'Failed to add student: ' . $e->getMessage()]);
         }
     }
 }

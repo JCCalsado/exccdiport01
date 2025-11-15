@@ -7,6 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft } from 'lucide-vue-next';
 
+// ✅ Props now include dynamic courses from backend
+interface Props {
+    courses: string[];
+    yearLevels: string[];
+}
+
+const props = defineProps<Props>();
+
 const breadcrumbs = [
     { title: 'Dashboard', href: route('dashboard') },
     { title: 'Student Fee Management', href: route('student-fees.index') },
@@ -18,7 +26,7 @@ const form = useForm({
     first_name: '',
     middle_initial: '',
     email: '',
-    password: 'password', // Default password
+    password: 'password',
     password_confirmation: 'password',
     birthday: '',
     year_level: '',
@@ -27,14 +35,6 @@ const form = useForm({
     phone: '',
     student_id: '',
 });
-
-const yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
-const courses = [
-    'BS Computer Science',
-    'BS Information Technology',
-    'BS Accountancy',
-    'BS Business Administration',
-];
 
 const submit = () => {
     form.post(route('student-fees.store-student'), {
@@ -69,7 +69,7 @@ const submit = () => {
                 </div>
             </div>
 
-            <form @submit.prevent="submit" class="space-y-6">
+            <div @submit.prevent="submit" class="space-y-6">
                 <!-- Personal Information -->
                 <div class="bg-white rounded-lg shadow-sm border p-6">
                     <h2 class="text-lg font-semibold mb-4">Personal Information</h2>
@@ -193,6 +193,7 @@ const submit = () => {
                             </p>
                         </div>
 
+                        <!-- ✅ FIXED: Course dropdown now uses dynamic data from backend -->
                         <div class="space-y-2">
                             <Label for="course">Course *</Label>
                             <select
@@ -203,7 +204,7 @@ const submit = () => {
                             >
                                 <option value="">Select course</option>
                                 <option
-                                    v-for="course in courses"
+                                    v-for="course in props.courses"
                                     :key="course"
                                     :value="course"
                                 >
@@ -225,7 +226,7 @@ const submit = () => {
                             >
                                 <option value="">Select year level</option>
                                 <option
-                                    v-for="year in yearLevels"
+                                    v-for="year in props.yearLevels"
                                     :key="year"
                                     :value="year"
                                 >
@@ -254,13 +255,13 @@ const submit = () => {
                         </Button>
                     </Link>
                     <Button 
-                        type="submit" 
+                        @click="submit"
                         :disabled="form.processing"
                     >
                         Add Student
                     </Button>
                 </div>
-            </form>
+            </div>
         </div>
     </AppLayout>
 </template>
