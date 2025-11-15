@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
-import { CreditCard, Calendar, CheckCircle, XCircle } from 'lucide-vue-next'
+import { CreditCard, Calendar, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-vue-next'
 
 type Fee = {
   name: string
@@ -26,6 +26,9 @@ type Transaction = {
   meta?: {
     fee_name?: string
     description?: string
+    assessment_id?: number
+    subject_code?: string
+    subject_name?: string
   }
 }
 
@@ -40,12 +43,26 @@ type CurrentTerm = {
   semester: string
 }
 
+type Assessment = {
+  id: number
+  assessment_number: string
+  year_level: string
+  semester: string
+  school_year: string
+  tuition_fee: number
+  other_fees: number
+  total_assessment: number
+  status: string
+  created_at: string
+}
+
 const props = withDefaults(defineProps<{
   account: Account
   transactions: Transaction[]
   fees: Fee[]
   currentTerm?: CurrentTerm
   tab?: string
+  latestAssessment?: Assessment
 }>(), {
   currentTerm: () => ({
     year: new Date().getFullYear(),
@@ -71,12 +88,9 @@ const getTabFromUrl = (): 'fees' | 'history' | 'payment' => {
 
 // Set initial tab - try prop first, then URL
 const getInitialTab = (): 'fees' | 'history' | 'payment' => {
-  // First try the prop
   if (props.tab === 'payment' || props.tab === 'history') {
     return props.tab
   }
-  
-  // Fallback to URL parsing
   return getTabFromUrl()
 }
 
@@ -112,7 +126,19 @@ const formatCurrency = (amount: number) => {
   }).format(amount)
 }
 
+const formatDate = (date: string) => {
+  return new Date(date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
+// Use latest assessment if available, otherwise calculate from fees
 const totalAssessmentFee = computed(() => {
+  if (props.latestAssessment) {
+    return props.latestAssessment.total_assessment
+  }
   return props.fees.reduce((sum, fee) => sum + Number(fee.amount), 0)
 })
 
@@ -124,7 +150,6 @@ const totalPaid = computed(() => {
 
 // Robust calculation: compute from transactions regardless of backend sign convention
 const remainingBalance = computed(() => {
-  // Defensive: ensure props.transactions exists
   const txs = props.transactions ?? []
 
   const charges = txs
@@ -135,39 +160,28 @@ const remainingBalance = computed(() => {
     .filter(t => t.kind === 'payment' && t.status === 'paid')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
-  // positive when charges > payments → amount owed
   const diff = charges - payments
-
-  // Round to avoid floating point issues
   const rounded = Math.round(diff * 100) / 100
 
   return rounded > 0 ? rounded : 0
 })
 
-// Calculate payables schedule based on the actual payment structure
-const payablesSchedule = computed(() => {
-  const total = totalAssessmentFee.value
+// Group fees by category for better display
+const feesByCategory = computed(() => {
+  const grouped = props.fees.reduce((acc, fee) => {
+    const category = fee.category || 'Other'
+    if (!acc[category]) {
+      acc[category] = []
+    }
+    acc[category].push(fee)
+    return acc
+  }, {} as Record<string, Fee[]>)
   
-  // Calculate based on percentages from the example:
-  // Upon Registration: 32.38% (4180/12904)
-  // Prelim: 20.28% (2617.2/12904)
-  // Midterm: 20.28% (2617.2/12904)
-  // Semi-Final: 16.90% (2181/12904)
-  // Final: 10.14% (1308.6/12904)
-  
-  const uponRegistration = total * 0.3238
-  const prelim = total * 0.2028
-  const midterm = total * 0.2028
-  const semiFinal = total * 0.1690
-  const final = total * 0.1014
-  
-  return [
-    { name: 'Upon Registration', amount: uponRegistration },
-    { name: 'Prelim', amount: prelim },
-    { name: 'Midterm', amount: midterm },
-    { name: 'Semi-Final', amount: semiFinal },
-    { name: 'Final', amount: final },
-  ]
+  return Object.entries(grouped).map(([category, fees]) => ({
+    category,
+    fees,
+    total: fees.reduce((sum, f) => sum + Number(f.amount), 0)
+  }))
 })
 
 const paymentHistory = computed(() => {
@@ -231,28 +245,82 @@ const submitPayment = () => {
         <p v-if="currentTerm" class="text-gray-600 mt-1">
           {{ currentTerm.semester }} - {{ currentTerm.year }}-{{ currentTerm.year + 1 }}
         </p>
+        <p v-if="latestAssessment" class="text-sm text-gray-500 mt-1">
+          Assessment No: {{ latestAssessment.assessment_number }}
+        </p>
       </div>
 
       <!-- Balance Cards -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <!-- Total Assessment -->
-        <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+          <div class="flex items-center justify-between mb-2">
+            <div class="p-3 bg-blue-100 rounded-lg">
+              <CreditCard :size="24" class="text-blue-600" />
+            </div>
+          </div>
           <h3 class="text-sm font-medium text-gray-600 mb-2">Total Assessment Fee</h3>
           <p class="text-3xl font-bold text-blue-600">{{ formatCurrency(totalAssessmentFee) }}</p>
+          <p v-if="latestAssessment" class="text-xs text-gray-500 mt-2">
+            Tuition: {{ formatCurrency(latestAssessment.tuition_fee) }} • 
+            Other: {{ formatCurrency(latestAssessment.other_fees) }}
+          </p>
         </div>
 
         <!-- Total Paid -->
-        <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+          <div class="flex items-center justify-between mb-2">
+            <div class="p-3 bg-green-100 rounded-lg">
+              <CheckCircle :size="24" class="text-green-600" />
+            </div>
+          </div>
           <h3 class="text-sm font-medium text-gray-600 mb-2">Total Paid</h3>
           <p class="text-3xl font-bold text-green-600">{{ formatCurrency(totalPaid) }}</p>
+          <p class="text-xs text-gray-500 mt-2">
+            {{ paymentHistory.length }} payment(s) made
+          </p>
         </div>
 
         <!-- Current Balance -->
-        <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+          <div class="flex items-center justify-between mb-2">
+            <div :class="[
+              'p-3 rounded-lg',
+              remainingBalance > 0 ? 'bg-red-100' : 'bg-green-100'
+            ]">
+              <component :is="remainingBalance > 0 ? AlertCircle : CheckCircle" 
+                :size="24" 
+                :class="remainingBalance > 0 ? 'text-red-600' : 'text-green-600'" 
+              />
+            </div>
+          </div>
           <h3 class="text-sm font-medium text-gray-600 mb-2">Current Balance</h3>
           <p class="text-3xl font-bold" :class="remainingBalance > 0 ? 'text-red-600' : 'text-green-600'">
             {{ formatCurrency(remainingBalance) }}
           </p>
+          <p class="text-xs text-gray-500 mt-2">
+            {{ remainingBalance > 0 ? 'Amount due' : 'Fully paid' }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Payment Progress Bar (if there's a balance) -->
+      <div v-if="totalAssessmentFee > 0" class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-semibold">Payment Progress</h2>
+          <span class="text-2xl font-bold text-blue-600">
+            {{ Math.round((totalPaid / totalAssessmentFee) * 100) }}%
+          </span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-4">
+          <div
+            class="bg-gradient-to-r from-blue-500 to-green-500 h-4 rounded-full transition-all duration-500"
+            :style="{ width: `${Math.min((totalPaid / totalAssessmentFee) * 100, 100)}%` }"
+          ></div>
+        </div>
+        <div class="flex justify-between mt-2 text-sm text-gray-600">
+          <span>{{ formatCurrency(totalPaid) }} paid</span>
+          <span>{{ formatCurrency(totalAssessmentFee) }} total</span>
         </div>
       </div>
 
@@ -269,7 +337,7 @@ const submitPayment = () => {
                   : 'border-transparent text-gray-500 hover:text-gray-700',
               ]"
             >
-              Fees & Payables
+              Fees & Assessment
             </button>
             <button
               @click="activeTab = 'history'"
@@ -300,20 +368,57 @@ const submitPayment = () => {
         <div class="p-6">
           <!-- Fees Tab -->
           <div v-if="activeTab === 'fees'">
-            <h2 class="text-lg font-semibold mb-4">FEES</h2>
+            <h2 class="text-lg font-semibold mb-4">CURRENT ASSESSMENT</h2>
             
-            <div v-if="fees.length" class="space-y-2">
-              <div
-                v-for="(fee, index) in fees"
-                :key="index"
-                class="flex justify-between py-2"
-              >
-                <span class="text-gray-700">{{ fee.name }}</span>
-                <span class="font-medium">{{ formatCurrency(fee.amount) }}</span>
+            <!-- Assessment Info Banner -->
+            <div v-if="latestAssessment" class="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200">
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span class="text-gray-600">Assessment No:</span>
+                  <p class="font-semibold">{{ latestAssessment.assessment_number }}</p>
+                </div>
+                <div>
+                  <span class="text-gray-600">School Year:</span>
+                  <p class="font-semibold">{{ latestAssessment.school_year }}</p>
+                </div>
+                <div>
+                  <span class="text-gray-600">Semester:</span>
+                  <p class="font-semibold">{{ latestAssessment.semester }}</p>
+                </div>
+                <div>
+                  <span class="text-gray-600">Status:</span>
+                  <span :class="[
+                    'px-2 py-1 text-xs font-semibold rounded-full',
+                    latestAssessment.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  ]">
+                    {{ latestAssessment.status }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fees by Category -->
+            <div v-if="feesByCategory.length" class="space-y-6">
+              <div v-for="categoryGroup in feesByCategory" :key="categoryGroup.category" class="space-y-2">
+                <h3 class="font-semibold text-gray-700 uppercase text-sm border-b pb-2">
+                  {{ categoryGroup.category }}
+                </h3>
+                <div
+                  v-for="(fee, index) in categoryGroup.fees"
+                  :key="index"
+                  class="flex justify-between py-2 pl-4"
+                >
+                  <span class="text-gray-700">{{ fee.name }}</span>
+                  <span class="font-medium">{{ formatCurrency(fee.amount) }}</span>
+                </div>
+                <div class="flex justify-between font-semibold text-sm pt-2 pl-4 border-t">
+                  <span>{{ categoryGroup.category }} Subtotal</span>
+                  <span>{{ formatCurrency(categoryGroup.total) }}</span>
+                </div>
               </div>
 
-              <div class="flex justify-between font-semibold border-t-2 pt-3 mt-3 text-lg">
-                <span>Total Assessment Fee</span>
+              <div class="flex justify-between font-bold border-t-2 pt-4 text-lg">
+                <span>TOTAL ASSESSMENT FEE</span>
                 <span class="text-blue-600">{{ formatCurrency(totalAssessmentFee) }}</span>
               </div>
             </div>
@@ -322,29 +427,12 @@ const submitPayment = () => {
               No fees assigned yet.
             </p>
 
-            <!-- Terms of Payment -->
-            <div v-if="fees.length" class="mt-8 border-t pt-6">
-              <h3 class="text-md font-semibold mb-4">TERMS OF PAYMENT</h3>
-              <div class="bg-gray-50 rounded-lg p-4">
-                <ul class="space-y-2">
-                  <li
-                    v-for="payable in payablesSchedule"
-                    :key="payable.name"
-                    class="flex justify-between text-sm"
-                  >
-                    <span class="text-gray-700">{{ payable.name }}</span>
-                    <span class="font-medium text-gray-900">{{ formatCurrency(payable.amount) }}</span>
-                  </li>
-                </ul>
-              </div>
-              <p class="text-xs text-gray-500 mt-3 italic">
-                * Payment schedule follows CCDI's standard payment structure
-              </p>
-            </div>
-
             <!-- Pending Charges -->
             <div v-if="pendingCharges.length" class="mt-8 border-t pt-6">
-              <h3 class="text-md font-semibold mb-4 text-red-700">PENDING CHARGES</h3>
+              <h3 class="text-md font-semibold mb-4 text-red-700 flex items-center gap-2">
+                <Clock :size="20" />
+                PENDING CHARGES
+              </h3>
               <div class="space-y-3">
                 <div
                   v-for="charge in pendingCharges"
@@ -353,9 +441,12 @@ const submitPayment = () => {
                 >
                   <div>
                     <p class="font-medium text-gray-900">
-                      {{ charge.fee?.name || charge.meta?.fee_name || charge.type }}
+                      {{ charge.fee?.name || charge.meta?.fee_name || charge.meta?.subject_name || charge.type }}
                     </p>
                     <p class="text-xs text-gray-600">{{ charge.reference }}</p>
+                    <p v-if="charge.meta?.subject_code" class="text-xs text-gray-500">
+                      {{ charge.meta.subject_code }}
+                    </p>
                   </div>
                   <div class="text-right">
                     <p class="text-lg font-semibold text-red-600">{{ formatCurrency(charge.amount) }}</p>
@@ -374,7 +465,7 @@ const submitPayment = () => {
               <div
                 v-for="payment in paymentHistory"
                 :key="payment.id"
-                class="flex justify-between items-center p-4 border rounded-lg hover:bg-gray-50"
+                class="flex justify-between items-center p-4 border rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <div class="flex items-center gap-3">
                   <div class="p-2 bg-green-100 rounded">
@@ -383,7 +474,7 @@ const submitPayment = () => {
                   <div>
                     <p class="font-medium text-gray-900">{{ payment.meta?.description || payment.type }}</p>
                     <p class="text-sm text-gray-600">
-                      {{ new Date(payment.created_at).toLocaleDateString() }}
+                      {{ formatDate(payment.created_at) }}
                     </p>
                     <p class="text-xs text-gray-500">{{ payment.reference }}</p>
                   </div>
@@ -400,6 +491,7 @@ const submitPayment = () => {
             <div v-else class="text-center py-12">
               <XCircle :size="48" class="text-gray-400 mx-auto mb-3" />
               <p class="text-gray-500">No payment history yet</p>
+              <p class="text-sm text-gray-400 mt-1">Your payments will appear here after you make them</p>
             </div>
           </div>
 
@@ -509,7 +601,7 @@ const submitPayment = () => {
                 <div class="md:col-span-2">
                   <button
                     type="submit"
-                    class="w-full px-5 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-400"
+                    class="w-full px-5 py-3 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-400 font-medium"
                     :disabled="!canSubmitPayment || paymentForm.processing"
                   >
                     <span v-if="paymentForm.processing">Processing...</span>
