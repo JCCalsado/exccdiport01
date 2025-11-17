@@ -495,17 +495,25 @@ const submitPayment = () => {
                       <p class="text-lg font-semibold text-red-600">{{ formatCurrency(charge.amount) }}</p>
                       <span class="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded">Pending</span>
                     </div>
-                    <button
-                      @click="() => {
-                        activeTab = 'payment';
-                        paymentForm.amount = charge.amount;
-                        paymentForm.reference_number = charge.reference;
-                        paymentForm.description = charge.fee?.name || charge.meta?.fee_name || charge.meta?.subject_name || charge.type;
-                      }"
-                      class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
-                    >
-                      Pay Now
-                    </button>
+                    <div class="flex gap-2">
+                      <Link
+                        :href="route('transactions.show', charge.id)"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
+                      >
+                        View
+                      </Link>
+                      <button
+                        @click="() => {
+                          activeTab = 'payment';
+                          paymentForm.amount = charge.amount;
+                          paymentForm.reference_number = charge.reference;
+                          paymentForm.description = charge.fee?.name || charge.meta?.fee_name || charge.meta?.subject_name || charge.type;
+                        }"
+                        class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
+                      >
+                        Pay Now
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
