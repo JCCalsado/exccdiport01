@@ -177,7 +177,7 @@ const payNow = (transaction: Transaction) => {
     <Head title="Transaction History" />
 
     <AppLayout>
-        <div class="space-y-6 max-w-7xl mx-auto p-6">
+        <div class="space-y-6 w-full p-6">
             <Breadcrumbs :items="breadcrumbs" />
 
             <!-- HEADER -->
