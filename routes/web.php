@@ -154,6 +154,29 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('report
     Route::get('/dashboard-data', [ReportController::class, 'dashboardData'])->name('reports.dashboard-data');
 });
 
+// Bulk Operations routes
+Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('bulk-operations')->group(function () {
+    Route::get('/', [BulkOperationController::class, 'index'])->name('bulk-operations.index');
+
+    // Bulk fee assignment
+    Route::post('/assign-fees', [BulkOperationController::class, 'bulkAssignFees'])->name('bulk-operations.assign-fees');
+
+    // Bulk fee updates
+    Route::post('/update-fees', [BulkOperationController::class, 'bulkUpdateFees'])->name('bulk-operations.update-fees');
+
+    // Bulk fee waivers
+    Route::post('/waive-fees', [BulkOperationController::class, 'bulkWaiveFees'])->name('bulk-operations.waive-fees');
+
+    // Bulk payment reminders
+    Route::post('/send-reminders', [BulkOperationController::class, 'bulkSendReminders'])->name('bulk-operations.send-reminders');
+
+    // Bulk student exports
+    Route::post('/export-students', [BulkOperationController::class, 'bulkExportStudents'])->name('bulk-operations.export-students');
+
+    // API for statistics
+    Route::get('/stats', [BulkOperationController::class, 'getStats'])->name('bulk-operations.stats');
+});
+
 // Settings routes
 Route::middleware('auth')->prefix('settings')->name('profile.')->group(function () {
     Route::delete('profile', [\App\Http\Controllers\Settings\ProfileController::class, 'destroy'])->name('destroy');
