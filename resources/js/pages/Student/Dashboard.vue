@@ -105,12 +105,12 @@ const recentNotificationsCount = computed(() => {
   ).length
 })
 
-// Computed: Status message
+// Computed: Status message (using live stats)
 const statusMessage = computed(() => {
   if (hasOutstandingBalance.value) {
     return {
       title: 'Payment Reminder',
-      message: `You have an outstanding balance of ${formatCurrency(props.stats.remaining_balance)}`,
+      message: `You have an outstanding balance of ${formatCurrency(liveStats.value.remaining_balance)}`,
       icon: AlertCircle,
       class: 'bg-red-50 border-red-200 text-red-900',
       buttonClass: 'bg-red-600 hover:bg-red-700',
@@ -127,6 +127,160 @@ const statusMessage = computed(() => {
   }
 })
 
+// Real-time lifecycle methods
+onMounted(() => {
+  initializeWebSocket()
+})
+
+onUnmounted(() => {
+  disconnectWebSocket()
+})
+
+// Initialize WebSocket connection
+const initializeWebSocket = () => {
+  try {
+    echo = new Echo({
+      broadcaster: 'pusher',
+      key: import.meta.env.VITE_PUSHER_APP_KEY,
+      cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER,
+      forceTLS: true,
+      authEndpoint: '/broadcasting/auth',
+      enabledTransports: ['ws', 'wss'],
+    })
+
+    // Connect to private student channel
+    const studentChannel = echo.private(`student.${props.account.user_id}`)
+
+    // Listen for payment status changes
+    studentChannel.listen('.payment.status.changed', (event: any) => {
+      handlePaymentStatusChange(event)
+    })
+
+    // Listen for new notifications
+    studentChannel.listen('.notification.received', (event: any) => {
+      handleNewNotification(event)
+    })
+
+    // Listen for balance updates
+    studentChannel.listen('.balance.updated', (event: any) => {
+      handleBalanceUpdate(event)
+    })
+
+    // Listen for new transactions
+    studentChannel.listen('.transaction.created', (event: any) => {
+      handleNewTransaction(event)
+    })
+
+    // Listen for connection events
+    studentChannel.subscribed(() => {
+      isConnected.value = true
+      console.log('Connected to real-time updates')
+    })
+
+    studentChannel.error((error: any) => {
+      console.error('WebSocket error:', error)
+      isConnected.value = false
+    })
+
+    echo.connector().pusher.connection.bind('connected', () => {
+      isConnected.value = true
+    })
+
+    echo.connector().pusher.connection.bind('disconnected', () => {
+      isConnected.value = false
+    })
+
+  } catch (error) {
+    console.error('Failed to initialize WebSocket:', error)
+    isConnected.value = false
+  }
+}
+
+// Disconnect WebSocket
+const disconnectWebSocket = () => {
+  if (echo) {
+    echo.disconnect()
+    echo = null
+    isConnected.value = false
+  }
+}
+
+// Handle payment status changes
+const handlePaymentStatusChange = (event: any) => {
+  // Update transaction in liveTransactions if it exists
+  const transactionIndex = liveTransactions.value.findIndex(t => t.id === event.payment_id)
+  if (transactionIndex !== -1) {
+    liveTransactions.value[transactionIndex] = {
+      ...liveTransactions.value[transactionIndex],
+      status: event.new_status,
+      updated_at: new Date().toISOString(),
+    }
+  }
+
+  // Show notification toast
+  showPaymentStatusNotification(event)
+}
+
+// Handle new notifications
+const handleNewNotification = (event: any) => {
+  const newNotification: Notification = {
+    id: event.notification.id,
+    title: event.notification.title,
+    message: event.notification.message,
+    type: event.notification.type,
+    created_at: event.notification.created_at,
+    start_date: event.notification.start_date,
+    end_date: event.notification.end_date,
+    read_at: null,
+  }
+
+  liveNotifications.value.unshift(newNotification)
+  unreadNotifications.value++
+}
+
+// Handle balance updates
+const handleBalanceUpdate = (event: any) => {
+  if (event.balance !== undefined) {
+    liveStats.value.remaining_balance = event.balance
+    liveStats.value.total_paid = event.total_paid || liveStats.value.total_paid
+  }
+}
+
+// Handle new transactions
+const handleNewTransaction = (event: any) => {
+  const newTransaction: Transaction = {
+    id: event.transaction.id,
+    type: event.transaction.type,
+    amount: event.transaction.amount,
+    status: event.transaction.status,
+    reference: event.transaction.reference,
+    created_at: event.transaction.created_at,
+    updated_at: event.transaction.updated_at,
+  }
+
+  liveTransactions.value.unshift(newTransaction)
+
+  // Keep only recent 10 transactions
+  if (liveTransactions.value.length > 10) {
+    liveTransactions.value = liveTransactions.value.slice(0, 10)
+  }
+}
+
+// Show payment status notification
+const showPaymentStatusNotification = (event: any) => {
+  const statusMessages = {
+    completed: 'Payment completed successfully!',
+    failed: 'Payment failed. Please try again.',
+    cancelled: 'Payment was cancelled.',
+    pending: 'Payment is being processed...',
+  }
+
+  const message = statusMessages[event.new_status] || `Payment status changed to ${event.new_status}`
+
+  // You could integrate with a toast notification system here
+  console.log('Payment notification:', message)
+}
+
 // Methods
 const viewTransaction = (transaction: Transaction) => {
   selectedTransaction.value = transaction
@@ -135,22 +289,34 @@ const viewTransaction = (transaction: Transaction) => {
 
 const handlePayNow = (transaction?: Transaction) => {
   if (transaction) {
-    // Navigate to account with specific transaction
-    router.visit(route('student.account', {
-      tab: 'payment',
-      transaction_id: transaction.id,
-    }))
+    router.visit(route('student.payment.create'), {
+      method: 'get',
+      data: { transaction_id: transaction.id },
+    })
   } else {
-    // Navigate to account payment tab
-    router.visit(route('student.account', { tab: 'payment' }))
+    router.visit(route('student.payment.create'))
   }
 }
 
 const handleDownload = (transaction: Transaction) => {
-  // Implement download logic
-  router.visit(route('transactions.download', { 
-    transaction: transaction.id 
+  router.visit(route('transactions.download', {
+    transaction: transaction.id
   }))
+}
+
+// Manual refresh for disconnected state
+const refreshData = async () => {
+  try {
+    const response = await axios.get('/student/dashboard/refresh')
+    if (response.data) {
+      liveStats.value = response.data.stats
+      liveTransactions.value = response.data.recentTransactions
+      liveNotifications.value = response.data.notifications
+      lastUpdate.value = new Date()
+    }
+  } catch (error) {
+    console.error('Failed to refresh data:', error)
+  }
 }
 </script>
 
