@@ -431,7 +431,7 @@ class ReportController extends Controller
      */
     private function generateAgingReportData(string $asOfDate, array $agingBuckets, bool $includeGraduated): array
     {
-        $students = Student::with(['user', 'studentFeeItems']);
+        $students = Student::with(['user', 'feeItems']);
 
         if (!$includeGraduated) {
             $students->where('status', 'active');
