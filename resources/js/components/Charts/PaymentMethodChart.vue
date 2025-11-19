@@ -262,6 +262,23 @@ const getMethodConfig = (method) => {
   }
 }
 
+// Format title for display
+const formatTitle = (title) => {
+  if (!title) return ''
+  return title.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+
+// Get average success rate
+const getAverageSuccessRate = () => {
+  if (!props.data.method_stats) return 0
+
+  const stats = Object.values(props.data.method_stats)
+  if (stats.length === 0) return 0
+
+  const totalSuccessRate = stats.reduce((sum, stat) => sum + (stat.success_rate || 0), 0)
+  return (totalSuccessRate / stats.length).toFixed(1)
+}
+
 // Format currency
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('en-PH', {
