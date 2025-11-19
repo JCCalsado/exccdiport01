@@ -477,18 +477,29 @@ const refreshData = async () => {
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Left Column (2/3 width) -->
         <div class="lg:col-span-2 space-y-6">
-          <!-- Notifications -->
-          <div v-if="activeNotifications.length" class="bg-white rounded-lg shadow-md p-6">
-            <div class="flex items-center gap-2 mb-4">
-              <Bell :size="20" class="text-blue-600" />
-              <h2 class="text-xl font-semibold">Important Announcements</h2>
+          <!-- Notifications (Real-time) -->
+          <div v-if="activeNotifications.length" class="bg-white rounded-lg shadow-md p-6 relative">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2">
+                <Bell :size="20" class="text-blue-600" />
+                <h2 class="text-xl font-semibold">Important Announcements</h2>
+                <!-- New notification indicator -->
+                <div v-if="recentNotificationsCount > 0" class="bg-red-500 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center animate-pulse">
+                  {{ recentNotificationsCount }}
+                </div>
+              </div>
             </div>
             <div class="space-y-4">
               <div
                 v-for="notification in activeNotifications"
                 :key="notification.id"
-                class="border-l-4 border-blue-500 bg-blue-50 p-4 rounded-r"
+                class="border-l-4 border-blue-500 bg-blue-50 p-4 rounded-r relative"
               >
+                <!-- New notification badge -->
+                <div v-if="new Date(notification.created_at) > new Date(Date.now() - 5 * 60 * 1000)"
+                     class="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
+                  New
+                </div>
                 <h3 class="font-semibold text-blue-900">{{ notification.title }}</h3>
                 <p class="text-sm text-gray-700 whitespace-pre-line mt-1">
                   {{ notification.message }}
@@ -504,7 +515,7 @@ const refreshData = async () => {
             </div>
           </div>
 
-          <!-- Recent Transactions -->
+          <!-- Recent Transactions (Real-time) -->
           <div class="bg-white rounded-lg shadow-md p-6">
             <div class="flex justify-between items-center mb-4">
               <h2 class="text-xl font-semibold">Recent Transactions</h2>
@@ -517,13 +528,19 @@ const refreshData = async () => {
             </div>
 
             <!-- Transactions List -->
-            <div v-if="recentTransactions.length" class="space-y-3">
+            <div v-if="liveTransactions.length" class="space-y-3">
               <div
-                v-for="transaction in recentTransactions"
+                v-for="transaction in liveTransactions"
                 :key="transaction.id"
-                class="flex justify-between items-center p-3 hover:bg-gray-50 rounded cursor-pointer"
+                class="flex justify-between items-center p-3 hover:bg-gray-50 rounded cursor-pointer relative"
                 @click="viewTransaction(transaction)"
               >
+                <!-- New transaction indicator -->
+                <div v-if="new Date(transaction.created_at) > new Date(Date.now() - 2 * 60 * 1000)"
+                     class="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
+                  New
+                </div>
+
                 <div class="flex-1">
                   <p class="font-medium">{{ transaction.type }}</p>
                   <p class="text-sm text-gray-600">{{ transaction.reference }}</p>
@@ -532,15 +549,21 @@ const refreshData = async () => {
                 <div class="text-right">
                   <p
                     class="font-semibold"
-                    :class="transaction.status === 'paid' ? 'text-green-600' : 'text-yellow-600'"
+                    :class="{
+                      'text-green-600': transaction.status === 'paid' || transaction.status === 'completed',
+                      'text-yellow-600': transaction.status === 'pending',
+                      'text-red-600': transaction.status === 'failed'
+                    }"
                   >
                     {{ formatCurrency(transaction.amount) }}
                   </p>
                   <span
                     class="text-xs px-2 py-1 rounded"
-                    :class="transaction.status === 'paid'
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-yellow-100 text-yellow-800'"
+                    :class="{
+                      'bg-green-100 text-green-800': transaction.status === 'paid' || transaction.status === 'completed',
+                      'bg-yellow-100 text-yellow-800': transaction.status === 'pending',
+                      'bg-red-100 text-red-800': transaction.status === 'failed'
+                    }"
                   >
                     {{ transaction.status }}
                   </span>
