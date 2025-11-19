@@ -8,15 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Fee extends Model
 {
     protected $fillable = [
-        'code',
-        'name',
-        'category',
-        'amount',
-        'year_level',
-        'semester',
-        'school_year',
-        'description',
-        'is_active',
+        'code', 'name', 'category', 'amount', 'year_level', 'semester', 'school_year', 'description', 'is_active', 'fee_category_id'
     ];
 
     protected $casts = [
@@ -49,5 +41,15 @@ class Fee extends Model
         $base = strtoupper(substr($category, 0, 3)) . '-' . $schoolYear . '-' . strtoupper(substr($semester, 0, 3));
         $count = self::where('code', 'like', $base . '%')->count();
         return $count > 0 ? $base . '-' . ($count + 1) : $base;
+    }
+
+    public function studentFeeItems()
+    {
+        return $this->hasMany(StudentFeeItem::class);
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(FeeCategory::class, 'fee_category_id');
     }
 }

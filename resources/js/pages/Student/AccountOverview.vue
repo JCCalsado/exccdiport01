@@ -532,40 +532,6 @@ const setPaymentAmount = (percentage: number) => {
             </div>
 
             <form @submit.prevent="submitPayment" class="space-y-6">
-              <!-- Quick Payment Presets -->
-              <div v-if="remainingBalance > 0" class="space-y-2">
-                <Label>Quick Payment Amounts</Label>
-                <div class="grid grid-cols-4 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    @click="setPaymentAmount(25)"
-                  >
-                    25%
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    @click="setPaymentAmount(50)"
-                  >
-                    50%
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    @click="setPaymentAmount(75)"
-                  >
-                    75%
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    @click="setPaymentAmount(100)"
-                  >
-                    Full
-                  </Button>
-                </div>
-              </div>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <!-- Amount -->

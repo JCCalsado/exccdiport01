@@ -22,16 +22,12 @@ class Payment extends Model
     const METHOD_DEBIT_CARD = 'debit_card';
 
     protected $fillable = [
-        'student_id',
-        'amount',
-        'description',
-        'payment_method',
-        'reference_number',
-        'status',
-        'paid_at',
+        'description', 'payment_method', 'reference_number', 
+        'student_id','fee_id','student_fee_item_id','amount','method','reference','status','paid_at','receipt_number','meta'
     ];
 
     protected $casts = [
+        'meta' => 'array',
         'amount' => 'decimal:2',
         'paid_at' => 'datetime',
     ];
@@ -42,6 +38,16 @@ class Payment extends Model
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
+    }
+
+    public function fee()
+    {
+        return $this->belongsTo(Fee::class);
+    }
+
+    public function studentFeeItem()
+    {
+        return $this->belongsTo(StudentFeeItem::class, 'student_fee_item_id');
     }
 
     /**

@@ -147,6 +147,9 @@ const formatDate = (date: string) => {
                                     <p v-if="paymentForm.errors.amount" class="text-sm text-red-500">
                                         {{ paymentForm.errors.amount }}
                                     </p>
+                                    <p class="text-xs text-gray-500">
+                                        Maximum: {{ formatCurrency(remainingBalance) }}
+                                    </p>
                                 </div>
 
                                 <div class="space-y-2">

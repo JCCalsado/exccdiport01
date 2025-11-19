@@ -42,6 +42,11 @@ class Student extends Model
         return $this->hasMany(Payment::class);
     }
 
+    public function feeItems()
+    {
+        return $this->hasMany(StudentFeeItem::class);
+    }
+
     /**
      * Get all transactions for this student through the user relationship
      * FIXED: Proper relationship definition
@@ -76,6 +81,15 @@ class Student extends Model
             ->sum('amount');
         
         return max(0, $this->total_balance - $totalPaid);
+    }
+
+    public function recalculateBalance(): float
+    {
+        $balance = $this->feeItems()->sum('balance');
+        $this->total_balance = $balance;
+        $this->save();
+
+        return (float) $balance;
     }
 
     /**

@@ -32,12 +32,12 @@ const badgeVariants = cva(
 
 export type BadgeVariants = VariantProps<typeof badgeVariants>
 
-interface BadgeProps {
+interface Props {
   variant?: BadgeVariants['variant']
   class?: HTMLAttributes['class']
 }
 
-const props = withDefaults(defineProps<BadgeProps>(), {
+const props = withDefaults(defineProps<Props>(), {
   variant: 'default',
 })
 

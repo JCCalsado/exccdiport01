@@ -1,5 +1,4 @@
 <script setup lang="ts">
-
 import { computed, ref } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
@@ -9,7 +8,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useFormatters } from '@/composables/useFormatters'
-import type { Transaction, Account, TransactionsByTerm, CurrentTerm, TermSummary } from '@/types/transaction'
+import type { 
+  Transaction, 
+  Account, 
+  TransactionsByTerm, 
+  TermSummary 
+} from '@/types/transaction'
 import { 
   ChevronDown, 
   Search, 
@@ -160,18 +164,18 @@ const handleDownloadFromDialog = (transaction: Transaction) => {
 // Status badge config
 const getStatusBadge = (status: string) => {
   const configs = {
-    paid: { class: 'bg-green-100 text-green-800', label: 'Paid' },
-    pending: { class: 'bg-yellow-100 text-yellow-800', label: 'Pending' },
-    failed: { class: 'bg-red-100 text-red-800', label: 'Failed' },
-    cancelled: { class: 'bg-gray-100 text-gray-800', label: 'Cancelled' },
+    paid: { variant: 'success' as const, label: 'Paid' },
+    pending: { variant: 'warning' as const, label: 'Pending' },
+    failed: { variant: 'destructive' as const, label: 'Failed' },
+    cancelled: { variant: 'secondary' as const, label: 'Cancelled' },
   }
   return configs[status as keyof typeof configs] || configs.pending
 }
 
 const getKindBadge = (kind: string) => {
   return kind === 'charge'
-    ? { class: 'bg-red-100 text-red-800', label: 'Charge' }
-    : { class: 'bg-green-100 text-green-800', label: 'Payment' }
+    ? { variant: 'destructive' as const, label: 'Charge' }
+    : { variant: 'success' as const, label: 'Payment' }
 }
 </script>
 
@@ -263,7 +267,7 @@ const getKindBadge = (kind: string) => {
               <h2 class="font-bold text-xl">{{ termKey }}</h2>
               <Badge 
                 v-if="termKey === currentTerm"
-                class="bg-blue-100 text-blue-800"
+                variant="info"
               >
                 Current
               </Badge>
@@ -364,7 +368,7 @@ const getKindBadge = (kind: string) => {
                   
                   <!-- Type Badge -->
                   <td class="p-3">
-                    <Badge :class="getKindBadge(t.kind).class">
+                    <Badge :variant="getKindBadge(t.kind).variant">
                       {{ getKindBadge(t.kind).label }}
                     </Badge>
                   </td>
@@ -382,7 +386,7 @@ const getKindBadge = (kind: string) => {
                   
                   <!-- Status Badge -->
                   <td class="p-3">
-                    <Badge :class="getStatusBadge(t.status).class">
+                    <Badge :variant="getStatusBadge(t.status).variant">
                       {{ getStatusBadge(t.status).label }}
                     </Badge>
                   </td>
