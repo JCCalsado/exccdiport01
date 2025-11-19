@@ -598,7 +598,7 @@ const refreshData = async () => {
               </Link>
 
               <Link
-                :href="route('student.account', { tab: 'payment' })"
+                :href="route('student.payment.create')"
                 class="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
               >
                 <div class="p-2 bg-green-500 rounded">
