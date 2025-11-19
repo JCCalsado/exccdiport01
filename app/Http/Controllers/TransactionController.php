@@ -21,7 +21,7 @@ class TransactionController extends Controller
         $user = $request->user();
 
         // Admins & accounting see all, students see their own
-        if (in_array($user->role->value, ['super_admin', 'admin', 'accounting'])) {
+        if (in_array($user->role->value, ['admin', 'accounting']) || $user->isAdmin()) {
             $transactions = Transaction::with('user')
                 ->orderByDesc('year')
                 ->orderBy('semester')
