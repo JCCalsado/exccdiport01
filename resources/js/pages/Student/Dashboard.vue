@@ -15,6 +15,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import Echo from 'laravel-echo'
+import axios from 'axios'
 import AppLayout from '@/layouts/AppLayout.vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import TransactionDetailsDialog from '@/components/TransactionDetailsDialog.vue'
