@@ -56,6 +56,22 @@ class Payment extends Model
     }
 
     /**
+     * Get the gateway details for this payment
+     */
+    public function gatewayDetails()
+    {
+        return $this->hasMany(PaymentGatewayDetail::class);
+    }
+
+    /**
+     * Get the latest gateway detail for this payment
+     */
+    public function latestGatewayDetail()
+    {
+        return $this->hasOne(PaymentGatewayDetail::class)->latest();
+    }
+
+    /**
      * Boot method to handle model events
      */
     protected static function booted()
