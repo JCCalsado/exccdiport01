@@ -8,13 +8,27 @@ use App\Services\AccountService;
 
 class Payment extends Model
 {
+    // Status constants
     const STATUS_COMPLETED = 'completed';
     const STATUS_PENDING = 'pending';
     const STATUS_FAILED = 'failed';
+    const STATUS_CANCELLED = 'cancelled';
+
+    // Payment method constants
+    const METHOD_CASH = 'cash';
+    const METHOD_GCASH = 'gcash';
+    const METHOD_BANK_TRANSFER = 'bank_transfer';
+    const METHOD_CREDIT_CARD = 'credit_card';
+    const METHOD_DEBIT_CARD = 'debit_card';
 
     protected $fillable = [
-        'student_id', 'amount', 'description', 
-        'payment_method', 'reference_number', 'status', 'paid_at'
+        'student_id',
+        'amount',
+        'description',
+        'payment_method',
+        'reference_number',
+        'status',
+        'paid_at',
     ];
 
     protected $casts = [
@@ -22,19 +36,110 @@ class Payment extends Model
         'paid_at' => 'datetime',
     ];
 
+    /**
+     * Get the student that owns the payment
+     */
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
     }
 
-    
+    /**
+     * Boot method to handle model events
+     */
     protected static function booted()
     {
         static::saved(function ($payment) {
-            // Ensure the payment has a related student and user
+            // Recalculate student balance when payment is saved
             if ($payment->student && $payment->student->user) {
                 AccountService::recalculate($payment->student->user);
             }
         });
+    }
+
+    /**
+     * Get all available payment methods
+     */
+    public static function getMethods(): array
+    {
+        return [
+            self::METHOD_CASH => 'Cash',
+            self::METHOD_GCASH => 'GCash',
+            self::METHOD_BANK_TRANSFER => 'Bank Transfer',
+            self::METHOD_CREDIT_CARD => 'Credit Card',
+            self::METHOD_DEBIT_CARD => 'Debit Card',
+        ];
+    }
+
+    /**
+     * Get all available statuses
+     */
+    public static function getStatuses(): array
+    {
+        return [
+            self::STATUS_COMPLETED => 'Completed',
+            self::STATUS_PENDING => 'Pending',
+            self::STATUS_FAILED => 'Failed',
+            self::STATUS_CANCELLED => 'Cancelled',
+        ];
+    }
+
+    /**
+     * Get payment method label
+     */
+    public function getPaymentMethodLabelAttribute(): string
+    {
+        return self::getMethods()[$this->payment_method] ?? $this->payment_method;
+    }
+
+    /**
+     * Get status label
+     */
+    public function getStatusLabelAttribute(): string
+    {
+        return self::getStatuses()[$this->status] ?? $this->status;
+    }
+
+    /**
+     * Scope: Completed payments only
+     */
+    public function scopeCompleted($query)
+    {
+        return $query->where('status', self::STATUS_COMPLETED);
+    }
+
+    /**
+     * Scope: Pending payments
+     */
+    public function scopePending($query)
+    {
+        return $query->where('status', self::STATUS_PENDING);
+    }
+
+    /**
+     * Scope: By date range
+     */
+    public function scopeDateRange($query, $startDate, $endDate)
+    {
+        return $query->whereBetween('paid_at', [$startDate, $endDate]);
+    }
+
+    /**
+     * Check if payment is completed
+     */
+    public function isCompleted(): bool
+    {
+        return $this->status === self::STATUS_COMPLETED;
+    }
+
+    /**
+     * Mark payment as completed
+     */
+    public function markAsCompleted(): bool
+    {
+        return $this->update([
+            'status' => self::STATUS_COMPLETED,
+            'paid_at' => now(),
+        ]);
     }
 }

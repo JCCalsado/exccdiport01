@@ -6,17 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Student extends Model
 {
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-    
     protected $fillable = [
-        'student_id', 'last_name', 'first_name', 'middle_initial', 'email', 'course', 'year_level',
-        'birthday', 'phone', 'address', 'total_balance'
+        'user_id', 'student_id', 'last_name', 'first_name', 'middle_initial',
+        'email', 'course', 'year_level', 'birthday',
+        'phone', 'address', 'total_balance', 'status',
     ];
 
     protected $casts = [
@@ -24,27 +21,115 @@ class Student extends Model
         'total_balance' => 'decimal:2',
     ];
 
+    // Status constants
+    const STATUS_ENROLLED = 'enrolled';
+    const STATUS_GRADUATED = 'graduated';
+    const STATUS_INACTIVE = 'inactive';
+
+    /**
+     * Get the user that owns the student record
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get all payments for this student
+     */
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
     }
 
-    // NEW: transactions via the linked user (transactions.user_id == students.user_id)
-    public function transactions(): HasMany
+    /**
+     * Get all transactions for this student through the user relationship
+     * FIXED: Proper relationship definition
+     */
+    public function transactions(): HasManyThrough
     {
-        // transactions.user_id = students.user_id
-        return $this->hasMany(Transaction::class, 'user_id', 'user_id');
+        return $this->hasManyThrough(
+            Transaction::class,
+            User::class,
+            'id',         // Foreign key on users table
+            'user_id',    // Foreign key on transactions table
+            'user_id',    // Local key on students table
+            'id'          // Local key on users table
+        );
     }
 
-    // Calculate remaining balance
-    public function getRemainingBalanceAttribute()
-    {
-        $totalPaid = $this->payments()->sum('amount');
-        return $this->total_balance - $totalPaid;
-    }
-
+    /**
+     * Get the account associated with this student
+     */
     public function account(): HasOne
     {
         return $this->hasOne(Account::class, 'user_id', 'user_id');
+    }
+
+    /**
+     * Calculate remaining balance (total_balance - total paid)
+     */
+    public function getRemainingBalanceAttribute(): float
+    {
+        $totalPaid = $this->payments()
+            ->where('status', Payment::STATUS_COMPLETED)
+            ->sum('amount');
+        
+        return max(0, $this->total_balance - $totalPaid);
+    }
+
+    /**
+     * Get full name attribute
+     */
+    public function getFullNameAttribute(): string
+    {
+        $mi = $this->middle_initial ? ' ' . strtoupper($this->middle_initial) . '.' : '';
+        return "{$this->last_name}, {$this->first_name}{$mi}";
+    }
+
+    /**
+     * Scope: Active students only
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('status', self::STATUS_ENROLLED);
+    }
+
+    /**
+     * Scope: By course
+     */
+    public function scopeByCourse($query, string $course)
+    {
+        return $query->where('course', $course);
+    }
+
+    /**
+     * Scope: By year level
+     */
+    public function scopeByYearLevel($query, string $yearLevel)
+    {
+        return $query->where('year_level', $yearLevel);
+    }
+
+    /**
+     * Check if student has outstanding balance
+     */
+    public function hasOutstandingBalance(): bool
+    {
+        return $this->remaining_balance > 0;
+    }
+
+    /**
+     * Get available payment methods
+     */
+    public static function getPaymentMethods(): array
+    {
+        return [
+            'cash' => 'Cash',
+            'gcash' => 'GCash',
+            'bank_transfer' => 'Bank Transfer',
+            'credit_card' => 'Credit Card',
+            'debit_card' => 'Debit Card',
+        ];
     }
 }

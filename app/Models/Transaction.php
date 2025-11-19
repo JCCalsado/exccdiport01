@@ -53,4 +53,92 @@ class Transaction extends Model
 
         return $pdf->download('transactions.pdf');
     }
+
+    /**
+     * Get transaction type label
+     */
+    public function getKindLabelAttribute(): string
+    {
+        return $this->kind === 'charge' ? 'Charge' : 'Payment';
+    }
+
+    /**
+     * Get status badge class
+     */
+    public function getStatusBadgeClassAttribute(): string
+    {
+        return match($this->status) {
+            'paid' => 'bg-green-100 text-green-800',
+            'pending' => 'bg-yellow-100 text-yellow-800',
+            'failed' => 'bg-red-100 text-red-800',
+            'cancelled' => 'bg-gray-100 text-gray-800',
+            default => 'bg-gray-100 text-gray-800',
+        };
+    }
+
+    /**
+     * Get formatted amount with sign
+     */
+    public function getFormattedAmountAttribute(): string
+    {
+        $sign = $this->kind === 'charge' ? '+' : '-';
+        return $sign . number_format($this->amount, 2);
+    }
+
+    /**
+     * Scope: By term (year and semester)
+     */
+    public function scopeByTerm($query, string $year, string $semester)
+    {
+        return $query->where('year', $year)
+                    ->where('semester', $semester);
+    }
+
+    /**
+     * Scope: Charges only
+     */
+    public function scopeCharges($query)
+    {
+        return $query->where('kind', 'charge');
+    }
+
+    /**
+     * Scope: Payments only
+     */
+    public function scopePayments($query)
+    {
+        return $query->where('kind', 'payment');
+    }
+
+    /**
+     * Scope: Pending only
+     */
+    public function scopePending($query)
+    {
+        return $query->where('status', 'pending');
+    }
+
+    /**
+     * Check if transaction is a charge
+     */
+    public function isCharge(): bool
+    {
+        return $this->kind === 'charge';
+    }
+
+    /**
+     * Check if transaction is a payment
+     */
+    public function isPayment(): bool
+    {
+        return $this->kind === 'payment';
+    }
+
+    /**
+     * Check if transaction is pending
+     */
+    public function isPending(): bool
+    {
+        return $this->status === 'pending';
+    }
 }
