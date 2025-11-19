@@ -443,7 +443,7 @@ class ReportController extends Controller
         $totalOutstanding = 0;
 
         foreach ($students as $student) {
-            $outstandingBalance = $student->studentFeeItems->sum('balance');
+            $outstandingBalance = $student->feeItems->sum('balance');
 
             if ($outstandingBalance > 0) {
                 $lastPayment = $student->payments()
