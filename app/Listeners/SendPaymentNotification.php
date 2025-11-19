@@ -6,6 +6,7 @@ use App\Events\PaymentStatusChanged;
 use App\Events\PaymentCompleted;
 use App\Events\PaymentFailed;
 use App\Services\NotificationService;
+use App\Enums\UserRoleEnum;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
