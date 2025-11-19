@@ -23,7 +23,7 @@ class Payment extends Model
 
     protected $fillable = [
         'description', 'payment_method', 'reference_number', 
-        'student_id','fee_id','student_fee_item_id','amount','method','reference','status','paid_at','receipt_number','meta'
+        'student_id','fee_id', 'fee_item_id', 'student_fee_item_id','amount','method','reference','status','paid_at','receipt_number','meta'
     ];
 
     protected $casts = [
@@ -50,13 +50,31 @@ class Payment extends Model
         return $this->belongsTo(StudentFeeItem::class, 'student_fee_item_id');
     }
 
+    public function feeItem(): BelongsTo
+    {
+        return $this->belongsTo(StudentFeeItem::class);
+    }
+
     /**
      * Boot method to handle model events
      */
     protected static function booted()
     {
         static::saved(function ($payment) {
-            // Recalculate student balance when payment is saved
+            if ($payment->fee_item_id && $payment->status === Payment::STATUS_COMPLETED) {
+                $feeItem = $payment->feeItem;
+                if ($feeItem) {
+                    // Recalculate total paid for this fee item
+                    $totalPaid = Payment::where('fee_item_id', $payment->fee_item_id)
+                        ->where('status', Payment::STATUS_COMPLETED)
+                        ->sum('amount');
+                    
+                    $feeItem->amount_paid = $totalPaid;
+                    $feeItem->save(); // This auto-updates balance and status
+                }
+            }
+
+            // Also recalculate student's overall balance
             if ($payment->student && $payment->student->user) {
                 AccountService::recalculate($payment->student->user);
             }

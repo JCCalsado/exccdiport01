@@ -1,13 +1,25 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StudentFeeItem extends Model
 {
     protected $fillable = [
-        'student_id', 'fee_id', 'original_amount', 'amount_paid', 'balance', 'status', 'due_date', 'reference'
+        'student_id',
+        'fee_id',
+        'school_year',
+        'semester',
+        'original_amount',
+        'amount_paid',
+        'balance',
+        'status',
+        'notes',
+        'due_date',
+        'assigned_by',
     ];
 
     protected $casts = [
@@ -17,46 +29,110 @@ class StudentFeeItem extends Model
         'due_date' => 'datetime',
     ];
 
-    public function student()
+    /**
+     * Boot method - auto-calculate balance when saving
+     */
+    protected static function booted()
+    {
+        static::saving(function ($item) {
+            // Auto-calculate balance
+            $item->balance = $item->original_amount - $item->amount_paid;
+            
+            // Auto-update status based on balance
+            if ($item->balance <= 0) {
+                $item->status = 'paid';
+            } elseif ($item->amount_paid > 0) {
+                $item->status = 'partial';
+            } else {
+                $item->status = 'pending';
+            }
+        });
+    }
+
+    // Relationships
+    public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
     }
 
-    public function fee()
+    public function fee(): BelongsTo
     {
         return $this->belongsTo(Fee::class);
     }
 
-    public function payments()
+    public function assignedBy(): BelongsTo
     {
-        return $this->hasMany(Payment::class, 'student_fee_item_id');
+        return $this->belongsTo(User::class, 'assigned_by');
     }
 
-    /**
-     * Apply payment to this fee item.
-     * Returns numeric amount actually applied.
-     */
-    public function applyPayment(float $amount): float
+    public function payments(): HasMany
     {
-        // use DB transaction for safety
-        return DB::transaction(function () use ($amount) {
-            $this->refresh(); // ensure fresh values
-            $remaining = (float) $this->balance;
+        return $this->hasMany(Payment::class, 'fee_item_id');
+    }
 
-            $applied = min($amount, $remaining);
-            $this->amount_paid = (float) $this->amount_paid + $applied;
-            $this->balance = (float) $this->original_amount - (float) $this->amount_paid;
+    // Scopes
+    public function scopePending($query)
+    {
+        return $query->where('status', 'pending');
+    }
 
-            if ($this->balance <= 0) {
-                $this->balance = 0;
-                $this->status = 'paid';
-            } elseif ($this->amount_paid > 0) {
-                $this->status = 'partial';
-            }
+    public function scopePartial($query)
+    {
+        return $query->where('status', 'partial');
+    }
 
-            $this->save();
+    public function scopePaid($query)
+    {
+        return $query->where('status', 'paid');
+    }
 
-            return $applied;
-        });
+    public function scopeForTerm($query, $schoolYear, $semester)
+    {
+        return $query->where('school_year', $schoolYear)
+                     ->where('semester', $semester);
+    }
+
+    public function scopeUnpaid($query)
+    {
+        return $query->whereIn('status', ['pending', 'partial']);
+    }
+
+    // Helper Methods
+    public function recordPayment(float $amount): bool
+    {
+        if ($amount <= 0 || $amount > $this->balance) {
+            return false;
+        }
+
+        $this->amount_paid += $amount;
+        $this->save(); // This will auto-update balance and status
+
+        return true;
+    }
+
+    public function getRemainingBalanceAttribute(): float
+    {
+        return $this->balance;
+    }
+
+    public function getPaymentPercentageAttribute(): float
+    {
+        if ($this->original_amount == 0) {
+            return 0;
+        }
+        return ($this->amount_paid / $this->original_amount) * 100;
+    }
+
+    public function isFullyPaid(): bool
+    {
+        return $this->status === 'paid';
+    }
+
+    public function isOverdue(): bool
+    {
+        if (!$this->due_date) {
+            return false;
+        }
+        return now()->isAfter($this->due_date) && !$this->isFullyPaid();
     }
 }

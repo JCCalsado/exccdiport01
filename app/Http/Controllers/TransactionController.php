@@ -6,9 +6,12 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\Transaction;
 use App\Models\Fee;
 use App\Models\User;
+use App\Models\StudentFeeItem;
+use App\Models\Payment;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 use App\Services\AccountService;
 
 class TransactionController extends Controller
@@ -218,7 +221,9 @@ class TransactionController extends Controller
     {
         $user = $request->user();
 
-        $data = $request->validate([
+        $validated = $request->validate([
+            'fee_item_ids' => 'nullable|array', // Allow selecting specific fees
+            'fee_item_ids.*' => 'exists:student_fee_items,id',
             'amount' => 'required|numeric|min:0.01',
             'payment_method' => 'required|string',
             'reference_number' => 'nullable|string',
@@ -226,31 +231,119 @@ class TransactionController extends Controller
             'description' => 'required|string',
         ]);
 
-        $tx = Transaction::create([
-            'user_id' => $user->id,
-            'reference' => 'PAY-' . Str::upper(Str::random(8)),
-            'kind' => 'payment',
-            'type' => 'Payment',
-            'amount' => $data['amount'],
-            'status' => 'paid',
-            'payment_channel' => $data['payment_method'],
-            'paid_at' => $data['paid_at'],
-            'meta' => [
-                'reference_number' => $data['reference_number'] ?? null,
-                'description' => $data['description'],
-            ],
-        ]);
+        DB::beginTransaction();
+        try {
+            // If specific fees selected
+            if (!empty($validated['fee_item_ids'])) {
+                $feeItems = StudentFeeItem::whereIn('id', $validated['fee_item_ids'])
+                    ->where('student_id', $user->student->id)
+                    ->unpaid()
+                    ->get();
 
-        // Update account balance
-        $this->recalculateAccount($user);
+                $totalBalance = $feeItems->sum('balance');
 
-        // ✅ Only check promotion if user has a student profile
-        if ($user->role->value === 'student' && $user->student) {
-            $this->checkAndPromoteStudent($user->student);
+                if ($validated['amount'] > $totalBalance) {
+                    return back()->withErrors(['amount' => 'Amount exceeds total balance of selected fees.']);
+                }
+
+                // Distribute payment across selected fees
+                $remainingAmount = $validated['amount'];
+
+                foreach ($feeItems as $feeItem) {
+                    if ($remainingAmount <= 0) break;
+
+                    $amountToPay = min($remainingAmount, $feeItem->balance);
+
+                    // Create payment record
+                    $payment = Payment::create([
+                        'student_id' => $user->student->id,
+                        'fee_item_id' => $feeItem->id,
+                        'amount' => $amountToPay,
+                        'payment_method' => $validated['payment_method'],
+                        'reference_number' => $validated['reference_number'] ?? 'PAY-' . strtoupper(Str::random(10)),
+                        'description' => $validated['description'],
+                        'status' => Payment::STATUS_COMPLETED,
+                        'paid_at' => $validated['paid_at'],
+                    ]);
+
+                    // Create transaction record
+                    Transaction::create([
+                        'user_id' => $user->id,
+                        'reference' => $payment->reference_number,
+                        'payment_channel' => $validated['payment_method'],
+                        'kind' => 'payment',
+                        'type' => 'Payment',
+                        'amount' => $amountToPay,
+                        'status' => 'paid',
+                        'paid_at' => $validated['paid_at'],
+                        'meta' => [
+                            'payment_id' => $payment->id,
+                            'fee_item_id' => $feeItem->id,
+                            'fee_name' => $feeItem->fee->name,
+                            'description' => $validated['description'],
+                        ],
+                    ]);
+
+                    $remainingAmount -= $amountToPay;
+                }
+            } else {
+                // General payment (apply to oldest unpaid fee items)
+                $feeItems = StudentFeeItem::where('student_id', $user->student->id)
+                    ->unpaid()
+                    ->orderBy('created_at')
+                    ->get();
+
+                $remainingAmount = $validated['amount'];
+
+                foreach ($feeItems as $feeItem) {
+                    if ($remainingAmount <= 0) break;
+
+                    $amountToPay = min($remainingAmount, $feeItem->balance);
+
+                    Payment::create([
+                        'student_id' => $user->student->id,
+                        'fee_item_id' => $feeItem->id,
+                        'amount' => $amountToPay,
+                        'payment_method' => $validated['payment_method'],
+                        'reference_number' => $validated['reference_number'] ?? 'PAY-' . strtoupper(Str::random(10)),
+                        'description' => $validated['description'],
+                        'status' => Payment::STATUS_COMPLETED,
+                        'paid_at' => $validated['paid_at'],
+                    ]);
+
+                    Transaction::create([
+                        'user_id' => $user->id,
+                        'reference' => 'PAY-' . strtoupper(Str::random(8)),
+                        'payment_channel' => $validated['payment_method'],
+                        'kind' => 'payment',
+                        'type' => 'Payment',
+                        'amount' => $amountToPay,
+                        'status' => 'paid',
+                        'paid_at' => $validated['paid_at'],
+                        'meta' => [
+                            'fee_item_id' => $feeItem->id,
+                            'fee_name' => $feeItem->fee->name,
+                            'description' => $validated['description'],
+                        ],
+                    ]);
+
+                    $remainingAmount -= $amountToPay;
+                }
+            }
+
+            // Recalculate balance
+            AccountService::recalculate($user);
+
+            DB::commit();
+
+            return redirect()->route('student.account')
+                ->with('success', 'Payment recorded successfully!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Payment failed: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Payment failed. Please try again.']);
         }
-
-        return redirect()->route('student.account')
-            ->with('success', 'Payment recorded successfully.');
     }
 
     protected function recalculateAccount($user): void

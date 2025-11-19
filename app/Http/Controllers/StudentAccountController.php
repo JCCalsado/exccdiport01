@@ -18,46 +18,51 @@ class StudentAccountController extends Controller
             $user->account()->create(['balance' => 0]);
         }
         
-        // Load transactions directly through user relationship (NOT account)
-        // This is the key fix - seeders use user_id, not account_id
-        $user->load(['transactions' => function ($query) {
-            $query->orderBy('created_at', 'desc');
-        }]);
+        // Load student with fee items
+        $user->load([
+            'student.feeItems' => function ($query) {
+                $query->with('fee')->orderBy('status')->orderBy('created_at');
+            },
+            'transactions' => function ($query) {
+                $query->orderBy('created_at', 'desc');
+            }
+        ]);
 
         // Get current term
         $year = now()->year;
         $month = now()->month;
-        if ($month >= 6 && $month <= 10) {
-            $semester = '1st Sem';
-        } elseif ($month >= 11 || $month <= 3) {
-            $semester = '2nd Sem';
-        } else {
-            $semester = 'Summer';
-        }
+        $semester = ($month >= 6 && $month <= 10) ? '1st Sem' : (($month >= 11 || $month <= 3) ? '2nd Sem' : 'Summer');
+        $schoolYear = $year . '-' . ($year + 1);
 
-        // Get fees for current term and student's year level
-        $fees = Fee::active()
-            ->where('year_level', $user->year_level)
+        // Get fee items for current term
+        $feeItems = $user->student->feeItems()
+            ->with('fee')
+            ->where('school_year', $schoolYear)
             ->where('semester', $semester)
-            ->where('school_year', $year . '-' . ($year + 1))
-            ->select('name', 'amount', 'category')
-            ->get();
-
-        // If no fees found, use fallback
-        if ($fees->isEmpty()) {
-            $fees = collect([
-                ['name' => 'Registration Fee', 'amount' => 200.0, 'category' => 'Miscellaneous'],
-                ['name' => 'Tuition Fee', 'amount' => 5000.0, 'category' => 'Tuition'],
-                ['name' => 'Lab Fee', 'amount' => 2000.0, 'category' => 'Laboratory'],
-                ['name' => 'Library Fee', 'amount' => 500.0, 'category' => 'Library'],
-                ['name' => 'Misc. Fee', 'amount' => 1200.0, 'category' => 'Miscellaneous'],
-            ]);
-        }
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'fee_id' => $item->fee_id,
+                    'name' => $item->fee->name,
+                    'category' => $item->fee->category,
+                    'original_amount' => $item->original_amount,
+                    'amount_paid' => $item->amount_paid,
+                    'balance' => $item->balance,
+                    'status' => $item->status,
+                    'payment_percentage' => $item->payment_percentage,
+                ];
+            });
 
         return Inertia::render('Student/AccountOverview', [
-            'account'      => $user->account,
-            'transactions' => $user->transactions ?? [], // Use user->transactions, not account->transactions
-            'fees'         => $fees->values(),
+            'account' => $user->account,
+            'transactions' => $user->transactions ?? [],
+            'feeItems' => $feeItems,
+            'currentTerm' => [
+                'year' => $year,
+                'semester' => $semester,
+                'school_year' => $schoolYear,
+            ],
         ]);
     }
 }

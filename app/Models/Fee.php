@@ -52,4 +52,11 @@ class Fee extends Model
     {
         return $this->belongsTo(FeeCategory::class, 'fee_category_id');
     }
+
+    public function assignedStudents()
+    {
+        return $this->belongsToMany(Student::class, 'student_fee_items')
+                    ->withPivot(['original_amount', 'amount_paid', 'balance', 'status'])
+                    ->withTimestamps();
+    }
 }

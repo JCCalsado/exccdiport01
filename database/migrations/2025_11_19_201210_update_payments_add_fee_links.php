@@ -21,7 +21,7 @@ class UpdatePaymentsAddFeeLinks extends Migration
 
             // optional receipt number + meta fields
             if (!Schema::hasColumn('payments', 'receipt_number')) {
-                $table->string('receipt_number')->nullable()->after('reference')->index();
+                $table->string('receipt_number')->nullable();
             }
             if (!Schema::hasColumn('payments', 'meta')) {
                 $table->json('meta')->nullable()->after('status');

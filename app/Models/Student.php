@@ -47,6 +47,22 @@ class Student extends Model
         return $this->hasMany(StudentFeeItem::class);
     }
 
+    public function unpaidFeeItems(): HasMany
+    {
+        return $this->feeItems()->whereIn('status', ['pending', 'partial']);
+    }
+
+    public function paidFeeItems(): HasMany
+    {
+        return $this->feeItems()->where('status', 'paid');
+    }
+
+    // Get total unpaid balance
+    public function getTotalUnpaidBalanceAttribute(): float
+    {
+        return $this->feeItems()->unpaid()->sum('balance');
+    }
+
     /**
      * Get all transactions for this student through the user relationship
      * FIXED: Proper relationship definition
