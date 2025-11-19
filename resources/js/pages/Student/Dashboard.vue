@@ -375,10 +375,10 @@ const refreshData = async () => {
         </div>
       </div>
 
-      <!-- Quick Stats Grid -->
+      <!-- Quick Stats Grid (Real-time) -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
         <!-- Total Fees Card -->
-        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow relative">
           <div class="flex items-center justify-between mb-2">
             <div class="p-3 bg-blue-100 rounded-lg">
               <FileText :size="24" class="text-blue-600" />
@@ -386,12 +386,17 @@ const refreshData = async () => {
           </div>
           <p class="text-sm text-gray-600">Total Fees</p>
           <p class="text-2xl font-bold text-gray-900">
-            {{ formatCurrency(stats.total_fees) }}
+            {{ formatCurrency(liveStats.total_fees) }}
           </p>
+          <!-- Real-time indicator -->
+          <div v-if="isConnected && liveStats.total_fees !== props.stats.total_fees"
+               class="absolute top-2 right-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+            Live
+          </div>
         </div>
 
         <!-- Total Paid Card -->
-        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow relative">
           <div class="flex items-center justify-between mb-2">
             <div class="p-3 bg-green-100 rounded-lg">
               <CheckCircle :size="24" class="text-green-600" />
@@ -399,12 +404,17 @@ const refreshData = async () => {
           </div>
           <p class="text-sm text-gray-600">Total Paid</p>
           <p class="text-2xl font-bold text-green-600">
-            {{ formatCurrency(stats.total_paid) }}
+            {{ formatCurrency(liveStats.total_paid) }}
           </p>
+          <!-- Real-time indicator -->
+          <div v-if="isConnected && liveStats.total_paid !== props.stats.total_paid"
+               class="absolute top-2 right-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+            Updated
+          </div>
         </div>
 
         <!-- Remaining Balance Card -->
-        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow relative">
           <div class="flex items-center justify-between mb-2">
             <div :class="[
               'p-3 rounded-lg',
@@ -415,12 +425,17 @@ const refreshData = async () => {
           </div>
           <p class="text-sm text-gray-600">Remaining Balance</p>
           <p class="text-2xl font-bold" :class="hasOutstandingBalance ? 'text-red-600' : 'text-green-600'">
-            {{ formatCurrency(stats.remaining_balance) }}
+            {{ formatCurrency(liveStats.remaining_balance) }}
           </p>
+          <!-- Real-time indicator -->
+          <div v-if="isConnected && liveStats.remaining_balance !== props.stats.remaining_balance"
+               class="absolute top-2 right-2 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full animate-pulse">
+            Live
+          </div>
         </div>
 
         <!-- Pending Charges Card -->
-        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow relative">
           <div class="flex items-center justify-between mb-2">
             <div class="p-3 bg-yellow-100 rounded-lg">
               <Clock :size="24" class="text-yellow-600" />
@@ -428,8 +443,13 @@ const refreshData = async () => {
           </div>
           <p class="text-sm text-gray-600">Pending Charges</p>
           <p class="text-2xl font-bold text-yellow-600">
-            {{ stats.pending_charges_count }}
+            {{ liveStats.pending_charges_count }}
           </p>
+          <!-- Real-time indicator -->
+          <div v-if="isConnected"
+               class="absolute top-2 right-2 bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
+            Live
+          </div>
         </div>
       </div>
 
