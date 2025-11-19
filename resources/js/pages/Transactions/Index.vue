@@ -1,15 +1,4 @@
 <script setup lang="ts">
-/**
- * Transaction History Index (IMPROVED)
- * Location: resources/js/pages/Transactions/Index.vue
- * 
- * Key improvements:
- * - Uses reusable composables and components
- * - Better search and filtering
- * - Improved term grouping logic
- * - Better performance with computed properties
- * - Enhanced UI with better loading states
- */
 
 import { computed, ref } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
@@ -18,7 +7,7 @@ import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import TransactionDetailsDialog from '@/components/TransactionDetailsDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import Badge from '@/components/ui/Badge.vue'
+import { Badge } from '@/components/ui/badge'
 import { useFormatters } from '@/composables/useFormatters'
 import type { Transaction, Account, TransactionsByTerm, CurrentTerm, TermSummary } from '@/types/transaction'
 import { 

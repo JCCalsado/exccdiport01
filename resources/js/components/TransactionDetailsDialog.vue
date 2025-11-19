@@ -1,17 +1,10 @@
 <script setup lang="ts">
-/**
- * TransactionDetailsDialog Component
- * Location: resources/js/components/TransactionDetailsDialog.vue
- * 
- * Reusable dialog for displaying transaction details.
- * Can be used in Student Dashboard, Account Overview, and Transaction History.
- */
 
 import { computed } from 'vue'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import Badge from '@/components/ui/Badge.vue'
+import { Badge } from '@/components/ui/badge'
 import { useFormatters } from '@/composables/useFormatters'
 import type { Transaction } from '@/types/transaction'
 import { CheckCircle, XCircle, Clock, AlertCircle, Download, CreditCard } from 'lucide-vue-next'
