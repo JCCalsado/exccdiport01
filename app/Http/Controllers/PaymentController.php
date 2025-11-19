@@ -425,4 +425,134 @@ class PaymentController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Handle GCash webhook
+     */
+    public function handleGCashWebhook(Request $request)
+    {
+        try {
+            Log::info('GCash webhook received', $request->all());
+
+            $result = $this->paymentGatewayService->processWebhook('gcash', $request->all());
+
+            return response()->json($result);
+
+        } catch (\Exception $e) {
+            Log::error('GCash webhook processing failed', [
+                'error' => $e->getMessage(),
+                'payload' => $request->all(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Webhook processing failed'
+            ], 500);
+        }
+    }
+
+    /**
+     * Handle PayPal webhook
+     */
+    public function handlePayPalWebhook(Request $request)
+    {
+        try {
+            Log::info('PayPal webhook received', $request->all());
+
+            // Verify PayPal webhook signature
+            if (!$this->verifyPayPalWebhook($request)) {
+                return response()->json(['error' => 'Invalid webhook signature'], 401);
+            }
+
+            $result = $this->paymentGatewayService->processWebhook('paypal', $request->all());
+
+            return response()->json($result);
+
+        } catch (\Exception $e) {
+            Log::error('PayPal webhook processing failed', [
+                'error' => $e->getMessage(),
+                'payload' => $request->all(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Webhook processing failed'
+            ], 500);
+        }
+    }
+
+    /**
+     * Handle Stripe webhook
+     */
+    public function handleStripeWebhook(Request $request)
+    {
+        try {
+            Log::info('Stripe webhook received', $request->all());
+
+            // Verify Stripe webhook signature
+            $payload = $request->getContent();
+            $sigHeader = $request->header('stripe-signature');
+            $endpointSecret = config('payment.credentials.stripe.webhook_secret');
+
+            if (!$endpointSecret) {
+                Log::error('Stripe webhook secret not configured');
+                return response()->json(['error' => 'Webhook not configured'], 500);
+            }
+
+            try {
+                $event = \Stripe\Webhook::constructEvent($payload, $sigHeader, $endpointSecret);
+            } catch (\UnexpectedValueException $e) {
+                Log::error('Invalid Stripe webhook payload', ['error' => $e->getMessage()]);
+                return response()->json(['error' => 'Invalid payload'], 400);
+            } catch (\Stripe\Exception\SignatureVerificationException $e) {
+                Log::error('Invalid Stripe webhook signature', ['error' => $e->getMessage()]);
+                return response()->json(['error' => 'Invalid signature'], 401);
+            }
+
+            $result = $this->paymentGatewayService->processWebhook('stripe', $event->toArray());
+
+            return response()->json($result);
+
+        } catch (\Exception $e) {
+            Log::error('Stripe webhook processing failed', [
+                'error' => $e->getMessage(),
+                'payload' => $request->all(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Webhook processing failed'
+            ], 500);
+        }
+    }
+
+    /**
+     * Verify PayPal webhook signature
+     */
+    private function verifyPayPalWebhook(Request $request): bool
+    {
+        $headers = [
+            'PAYPAL-AUTH-ALGO' => $request->header('PAYPAL-AUTH-ALGO'),
+            'PAYPAL-TRANSMISSION-ID' => $request->header('PAYPAL-TRANSMISSION-ID'),
+            'PAYPAL-CERT-ID' => $request->header('PAYPAL-CERT-ID'),
+            'PAYPAL-TRANSMISSION-SIG' => $request->header('PAYPAL-TRANSMISSION-SIG'),
+            'PAYPAL-TRANSMISSION-TIME' => $request->header('PAYPAL-TRANSMISSION-TIME'),
+        ];
+
+        if (in_array(null, $headers)) {
+            return false;
+        }
+
+        $webhookId = config('payment.credentials.paypal.webhook_id');
+        if (!$webhookId) {
+            return false;
+        }
+
+        // Implement PayPal webhook verification
+        // This is a simplified version - in production, you should use PayPal's SDK
+        $payload = $request->getContent();
+        $expectedSig = hash_hmac('sha256', $payload, config('payment.credentials.paypal.webhook_secret', ''));
+
+        return hash_equals($expectedSig, $headers['PAYPAL-TRANSMISSION-SIG']);
+    }
 }
