@@ -105,4 +105,44 @@ class User extends Authenticatable
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ];
     }
+
+    /**
+     * Check if user is admin
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === UserRoleEnum::ADMIN;
+    }
+
+    /**
+     * Check if user is accounting staff
+     */
+    public function isAccounting(): bool
+    {
+        return $this->role === UserRoleEnum::ACCOUNTING;
+    }
+
+    /**
+     * Check if user is student
+     */
+    public function isStudent(): bool
+    {
+        return $this->role === UserRoleEnum::STUDENT;
+    }
+
+    /**
+     * Check if user has admin or accounting role
+     */
+    public function isStaff(): bool
+    {
+        return $this->isAdmin() || $this->isAccounting();
+    }
+
+    /**
+     * Get user role label
+     */
+    public function getRoleLabelAttribute(): string
+    {
+        return $this->role->label() ?? 'Unknown';
+    }
 }
