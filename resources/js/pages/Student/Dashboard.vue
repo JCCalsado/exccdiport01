@@ -1,21 +1,24 @@
 <script setup lang="ts">
 /**
- * Student Dashboard (IMPROVED)
+ * Student Dashboard (REAL-TIME ENHANCED)
  * Location: resources/js/pages/Student/Dashboard.vue
- * 
- * Key improvements:
- * - Uses reusable composables for formatting
- * - Uses reusable TransactionDetailsDialog component
- * - Better error handling and loading states
- * - Optimized computed properties
- * - Better TypeScript types
+ *
+ * Key enhancements:
+ * - Real-time WebSocket integration for live updates
+ * - Live payment status monitoring
+ * - Real-time notifications
+ * - Auto-refresh of dashboard data
+ * - Live balance updates
+ * - Real-time transaction status
  */
 
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
+import Echo from 'laravel-echo'
 import AppLayout from '@/layouts/AppLayout.vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import TransactionDetailsDialog from '@/components/TransactionDetailsDialog.vue'
+import NotificationCenter from '@/components/NotificationCenter.vue'
 import { Button } from '@/components/ui/button'
 import { useFormatters } from '@/composables/useFormatters'
 import type { Transaction, Account, Notification, TransactionStats } from '@/types/transaction'
@@ -30,6 +33,9 @@ import {
   CreditCard,
   Bell,
   ArrowRight,
+  RefreshCw,
+  Wifi,
+  WifiOff,
 } from 'lucide-vue-next'
 
 interface Props {
