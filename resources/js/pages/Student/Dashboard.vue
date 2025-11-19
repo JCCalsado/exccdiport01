@@ -652,5 +652,13 @@ const refreshData = async () => {
       @pay-now="handlePayNow"
       @download="handleDownload"
     />
+
+    <!-- Notification Center Modal -->
+    <NotificationCenter
+      v-model:open="showNotificationCenter"
+      :notifications="liveNotifications"
+      :unread-count="unreadNotifications"
+      @mark-read="() => unreadNotifications.value--"
+    />
   </AppLayout>
 </template>
