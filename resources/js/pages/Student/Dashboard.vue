@@ -327,10 +327,52 @@ const refreshData = async () => {
     <div class="w-full p-6 space-y-6">
       <Breadcrumbs :items="breadcrumbs" />
 
-      <!-- Welcome Header -->
-      <div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg shadow-lg p-6 text-white">
-        <h1 class="text-3xl font-bold mb-2">Welcome Back, Student!</h1>
-        <p class="text-blue-100">Here's your financial overview and important updates</p>
+      <!-- Welcome Header with Real-time Status -->
+      <div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg shadow-lg p-6 text-white relative">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="text-3xl font-bold mb-2">Welcome Back, Student!</h1>
+            <p class="text-blue-100">Here's your financial overview and important updates</p>
+          </div>
+          <div class="flex items-center space-x-4">
+            <!-- Connection Status -->
+            <div class="flex items-center space-x-2 bg-white bg-opacity-20 rounded-lg px-3 py-2">
+              <component :is="connectionStatus.icon" :size="16" :class="connectionStatus.class" />
+              <span class="text-sm" :class="connectionStatus.class">{{ connectionStatus.text }}</span>
+            </div>
+
+            <!-- Notification Center Button -->
+            <button
+              @click="showNotificationCenter = true"
+              class="relative bg-white bg-opacity-20 rounded-lg px-4 py-2 hover:bg-opacity-30 transition-colors"
+            >
+              <div class="flex items-center space-x-2">
+                <Bell :size="16" />
+                <span class="text-sm">Notifications</span>
+              </div>
+              <div
+                v-if="recentNotificationsCount > 0"
+                class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"
+              >
+                {{ recentNotificationsCount }}
+              </div>
+            </button>
+
+            <!-- Refresh Button (when offline) -->
+            <button
+              v-if="!isConnected"
+              @click="refreshData"
+              class="bg-white bg-opacity-20 rounded-lg px-3 py-2 hover:bg-opacity-30 transition-colors"
+            >
+              <RefreshCw :size="16" />
+            </button>
+          </div>
+        </div>
+
+        <!-- Last Update Timestamp -->
+        <div class="absolute bottom-2 right-2 text-xs text-blue-200">
+          Last updated: {{ formatDate(lastUpdate, 'time') }}
+        </div>
       </div>
 
       <!-- Quick Stats Grid -->
