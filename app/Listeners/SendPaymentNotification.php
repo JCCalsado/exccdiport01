@@ -218,7 +218,6 @@ class SendPaymentNotification
         }
 
         // Create admin notifications
-        use App\Enums\UserRoleEnum;
         $adminUsers = \App\Models\User::whereIn('role', [UserRoleEnum::ADMIN, UserRoleEnum::ACCOUNTING])->get();
 
         foreach ($adminUsers as $admin) {
