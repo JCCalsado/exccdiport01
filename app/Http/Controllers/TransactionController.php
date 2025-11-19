@@ -71,7 +71,7 @@ class TransactionController extends Controller
     public function store(Request $request)
     {
         // Only staff can create transactions
-        if (!in_array($request->user()->role->value, ['super_admin', 'admin', 'accounting'])) {
+        if (!($request->user()->isStaff() || in_array($request->user()->role->value, ['admin', 'accounting']))) {
             abort(403, 'Unauthorized action.');
         }
 
