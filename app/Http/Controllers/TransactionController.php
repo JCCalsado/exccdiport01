@@ -292,6 +292,10 @@ class TransactionController extends Controller
                 }
             } else {
                 // General payment (apply to oldest unpaid fee items)
+                if (!$user->student) {
+                    return back()->withErrors(['error' => 'Student profile not found.']);
+                }
+
                 $feeItems = StudentFeeItem::where('student_id', $user->student->id)
                     ->unpaid()
                     ->orderBy('created_at')
