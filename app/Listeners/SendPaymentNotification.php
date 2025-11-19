@@ -262,7 +262,7 @@ class SendPaymentNotification
      */
     private function getPaymentCompletedSmsMessage($payment): string
     {
-        return "Payment of ₱{$payment->amount} completed successfully. Receipt #: {$payment->receipt_number}. Thank you!";
+        return "Payment of ₱{$payment->amount} completed successfully. Receipt #: {$payment->reference_number}. Thank you!";
     }
 
     /**
