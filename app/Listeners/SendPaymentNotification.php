@@ -80,7 +80,7 @@ class SendPaymentNotification
             'data' => [
                 'payment_id' => $payment->id,
                 'amount' => $payment->amount,
-                'receipt_number' => $payment->receipt_number,
+                'reference_number' => $payment->reference_number,
                 'payment_method' => $payment->payment_method,
             ],
         ]);
