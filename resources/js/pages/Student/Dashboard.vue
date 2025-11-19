@@ -55,9 +55,21 @@ const breadcrumbs = [
   { title: 'Student Dashboard' },
 ]
 
+// Real-time state
+const isConnected = ref(false)
+const liveNotifications = ref<Notification[]>([...props.notifications])
+const liveTransactions = ref<Transaction[]>([...props.recentTransactions])
+const liveStats = ref<TransactionStats>({ ...props.stats })
+const lastUpdate = ref(new Date())
+const showNotificationCenter = ref(false)
+const unreadNotifications = ref(0)
+
 // Dialog state
 const showDetailsDialog = ref(false)
 const selectedTransaction = ref<Transaction | null>(null)
+
+// WebSocket connection
+let echo: Echo | null = null
 
 // Computed: Payment percentage
 const paymentPercentage = computed(() => {
