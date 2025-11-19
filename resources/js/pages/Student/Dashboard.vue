@@ -71,16 +71,16 @@ const selectedTransaction = ref<Transaction | null>(null)
 // WebSocket connection
 let echo: Echo | null = null
 
-// Computed: Payment percentage
+// Computed: Payment percentage (using live stats)
 const paymentPercentage = computed(() => {
-  if (props.stats.total_fees === 0) return 0
-  return Math.round((props.stats.total_paid / props.stats.total_fees) * 100)
+  if (liveStats.value.total_fees === 0) return 0
+  return Math.round((liveStats.value.total_paid / liveStats.value.total_fees) * 100)
 })
 
-// Computed: Active notifications (filtered by date)
+// Computed: Active notifications (filtered by date, using live notifications)
 const activeNotifications = computed(() => {
   const now = new Date()
-  return props.notifications.filter(n => {
+  return liveNotifications.value.filter(n => {
     if (!n.start_date) return true
     const startDate = new Date(n.start_date)
     const endDate = n.end_date ? new Date(n.end_date) : null
@@ -88,8 +88,22 @@ const activeNotifications = computed(() => {
   })
 })
 
-// Computed: Has outstanding balance
-const hasOutstandingBalance = computed(() => props.stats.remaining_balance > 0)
+// Computed: Has outstanding balance (using live stats)
+const hasOutstandingBalance = computed(() => liveStats.value.remaining_balance > 0)
+
+// Computed: Connection status display
+const connectionStatus = computed(() => ({
+  text: isConnected.value ? 'Connected' : 'Offline',
+  icon: isConnected.value ? Wifi : WifiOff,
+  class: isConnected.value ? 'text-green-600' : 'text-red-600',
+}))
+
+// Computed: Recent notifications badge count
+const recentNotificationsCount = computed(() => {
+  return liveNotifications.value.filter(n =>
+    new Date(n.created_at) > new Date(Date.now() - 5 * 60 * 1000) // Last 5 minutes
+  ).length
+})
 
 // Computed: Status message
 const statusMessage = computed(() => {
