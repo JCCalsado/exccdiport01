@@ -129,6 +129,29 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function
     Route::post('/notifications', [NotificationController::class, 'store'])->name('notifications.store');
 });
 
+// Reports routes
+Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('reports')->group(function () {
+    Route::get('/', [ReportController::class, 'index'])->name('reports.index');
+
+    // Revenue reports
+    Route::post('/revenue', [ReportController::class, 'revenue'])->name('reports.revenue');
+
+    // Payment methods analysis
+    Route::post('/payment-methods', [ReportController::class, 'paymentMethods'])->name('reports.payment-methods');
+
+    // Student payment patterns
+    Route::post('/student-patterns', [ReportController::class, 'studentPatterns'])->name('reports.student-patterns');
+
+    // Aging report
+    Route::post('/aging', [ReportController::class, 'agingReport'])->name('reports.aging');
+
+    // Course revenue analysis
+    Route::post('/course-revenue', [ReportController::class, 'courseRevenue'])->name('reports.course-revenue');
+
+    // API for dashboard data
+    Route::get('/dashboard-data', [ReportController::class, 'dashboardData'])->name('reports.dashboard-data');
+});
+
 // Settings routes
 Route::middleware('auth')->prefix('settings')->name('profile.')->group(function () {
     Route::delete('profile', [\App\Http\Controllers\Settings\ProfileController::class, 'destroy'])->name('destroy');
