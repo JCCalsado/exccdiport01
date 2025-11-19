@@ -76,7 +76,7 @@ class SendPaymentNotification
             'user_id' => $user->id,
             'type' => 'payment_completed',
             'title' => 'Payment Completed',
-            'message' => "Your payment of ₱{$payment->amount} has been successfully processed. Receipt #: {$payment->receipt_number}",
+            'message' => "Your payment of ₱{$payment->amount} has been successfully processed. Receipt #: {$payment->reference_number}",
             'data' => [
                 'payment_id' => $payment->id,
                 'amount' => $payment->amount,
