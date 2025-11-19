@@ -86,8 +86,8 @@ class SendPaymentNotification
         ]);
 
         // Send SMS notification if configured
-        if (config('payment.notifications.sms_confirmation', false) && $student->contact_number) {
-            $this->sendSmsNotification($student->contact_number, $this->getPaymentCompletedSmsMessage($payment));
+        if (config('payment.notifications.sms_confirmation', false) && $student->phone) {
+            $this->sendSmsNotification($student->phone, $this->getPaymentCompletedSmsMessage($payment));
         }
 
         // Notify administrators
