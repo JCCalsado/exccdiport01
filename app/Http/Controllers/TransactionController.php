@@ -235,6 +235,10 @@ class TransactionController extends Controller
         try {
             // If specific fees selected
             if (!empty($validated['fee_item_ids'])) {
+                if (!$user->student) {
+                    return back()->withErrors(['error' => 'Student profile not found.']);
+                }
+
                 $feeItems = StudentFeeItem::whereIn('id', $validated['fee_item_ids'])
                     ->where('student_id', $user->student->id)
                     ->unpaid()
