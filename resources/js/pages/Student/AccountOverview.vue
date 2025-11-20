@@ -88,8 +88,8 @@ const paymentForm = useForm({
 
 // Computed: Assessment totals
 const totalAssessmentFee = computed(() => {
-  return props.latestAssessment?.total_assessment ?? 
-    props.fees.reduce((sum, fee) => sum + Number(fee.amount), 0)
+  return props.latestAssessment?.total_assessment ??
+    (props.fees || []).reduce((sum, fee) => sum + Number(fee.amount || 0), 0)
 })
 
 const totalPaid = computed(() => {
