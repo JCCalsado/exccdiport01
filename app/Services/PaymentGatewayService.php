@@ -102,8 +102,8 @@ class PaymentGatewayService
             'merchant_order_id' => 'PAYMENT_' . $payment->id,
             'expiry_seconds' => config('payment.gcash.expiry_seconds', 900), // 15 minutes
             'callback_url' => route('payments.webhook.gcash'),
-            'success_url' => route('payments.success', $payment->id),
-            'fail_url' => route('payments.failed', $payment->id),
+            'success_url' => route('payment.success', $payment->id),
+            'fail_url' => route('payment.failed', $payment->id),
         ];
 
         $response = Http::withHeaders([
