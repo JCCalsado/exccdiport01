@@ -59,7 +59,7 @@ const selectedTransaction = ref<Transaction | null>(null)
 const showDetailsDialog = ref(false)
 
 // Initialize current term as expanded
-if (props.currentTerm && props.transactionsByTerm[props.currentTerm]) {
+if (props.currentTerm && props.transactionsByTerm && props.transactionsByTerm[props.currentTerm]) {
   expanded.value[props.currentTerm] = true
 }
 
