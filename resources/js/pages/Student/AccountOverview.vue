@@ -135,7 +135,7 @@ const feesByCategory = computed(() => {
 
 // Computed: Payment history
 const paymentHistory = computed(() => {
-  return props.transactions
+  return (props.transactions || [])
     .filter(t => t.kind === 'payment')
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 })
