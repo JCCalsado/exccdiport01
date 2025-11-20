@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('transactions', function (Blueprint $table) {
-            $table->string('year')->nullable()->after('kind');      // e.g. 2025
-            $table->string('semester')->nullable()->after('year');  // e.g. 1st Sem, 2nd Sem
+            $table->string('year')->nullable()->after('category');
+            $table->string('semester')->nullable()->after('year');
         });
     }
 
