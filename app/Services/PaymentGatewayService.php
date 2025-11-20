@@ -202,8 +202,8 @@ class PaymentGatewayService
         $payload = [
             'payment_method_types' => ['card', 'alipay'],
             'mode' => 'payment',
-            'success_url' => route('payments.success', $payment->id) . '?session_id={CHECKOUT_SESSION_ID}',
-            'cancel_url' => route('payments.cancelled', $payment->id),
+            'success_url' => route('payment.success', $payment->id) . '?session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url' => route('payment.cancelled', $payment->id),
             'client_reference_id' => 'PAYMENT_' . $payment->id,
             'line_items' => [
                 [
