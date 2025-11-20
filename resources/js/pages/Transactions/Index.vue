@@ -70,7 +70,7 @@ const isStaff = computed(() => {
 
 // Computed: Total terms count
 const totalTermsCount = computed(() => {
-  return Object.keys(props.transactionsByTerm).length
+  return Object.keys(props.transactionsByTerm || {}).length
 })
 
 // Computed: Filtered transactions by term
