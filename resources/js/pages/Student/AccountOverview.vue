@@ -99,11 +99,11 @@ const totalPaid = computed(() => {
 })
 
 const remainingBalance = computed(() => {
-  const charges = props.transactions
+  const charges = (props.transactions || [])
     .filter(t => t.kind === 'charge')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
-  const payments = props.transactions
+  const payments = (props.transactions || [])
     .filter(t => t.kind === 'payment' && t.status === 'paid')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
