@@ -153,8 +153,8 @@ class PaymentGatewayService
                 ],
             ],
             'application_context' => [
-                'return_url' => route('payments.success', $payment->id),
-                'cancel_url' => route('payments.cancelled', $payment->id),
+                'return_url' => route('payment.success', $payment->id),
+                'cancel_url' => route('payment.cancelled', $payment->id),
                 'brand_name' => config('app.name', 'School Payment Portal'),
                 'user_action' => 'PAY_NOW',
             ],
