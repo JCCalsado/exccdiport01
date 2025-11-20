@@ -80,7 +80,7 @@ const filteredTransactionsByTerm = computed(() => {
   let terms = props.transactionsByTerm
 
   // Filter out past semesters if not showing them
-  if (!showPastSemesters.value && props.currentTerm && terms[props.currentTerm]) {
+  if (!showPastSemesters.value && props.currentTerm && terms && terms[props.currentTerm]) {
     terms = { [props.currentTerm]: terms[props.currentTerm] }
   }
 
