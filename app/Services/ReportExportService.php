@@ -2,768 +2,306 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Maatwebsite\Excel\Facades\Excel;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Exports\PaymentsExport;
+use App\Exports\RevenueExport;
+use App\Exports\StudentPatternsExport;
+use App\Exports\AgingReportExport;
+use App\Exports\CourseRevenueExport;
 
 class ReportExportService
 {
     /**
-     * Export revenue report to specified format
+     * Export revenue report
      */
-    public function exportRevenueReport(array $data, string $format)
+    public function exportRevenueReport(array $data, string $format): \Illuminate\Http\Response|\Symfony\Component\HttpFoundation\BinaryFileResponse
     {
+        $user = Auth::user();
+        
         switch ($format) {
             case 'pdf':
-                return $this->exportRevenuePDF($data);
+                return $this->generateRevenuePDF($data, $user);
             case 'xlsx':
-                return $this->exportRevenueExcel($data);
+                return $this->generateRevenueExcel($data, $user);
             case 'csv':
-                return $this->exportRevenueCSV($data);
+                return $this->generateRevenueCSV($data, $user);
             default:
-                throw new \Exception("Unsupported format: {$format}");
+                throw new \Exception('Unsupported export format');
         }
     }
 
     /**
      * Export payment methods report
      */
-    public function exportPaymentMethodsReport(array $data, string $format)
+    public function exportPaymentMethodsReport(array $data, string $format): \Illuminate\Http\Response|\Symfony\Component\HttpFoundation\BinaryFileResponse
     {
+        $user = Auth::user();
+        
         switch ($format) {
             case 'pdf':
-                return $this->exportPaymentMethodsPDF($data);
+                return $this->generatePaymentMethodsPDF($data, $user);
             case 'xlsx':
-                return $this->exportPaymentMethodsExcel($data);
+                return $this->generatePaymentMethodsExcel($data, $user);
             case 'csv':
-                return $this->exportPaymentMethodsCSV($data);
+                return $this->generatePaymentMethodsCSV($data, $user);
             default:
-                throw new \Exception("Unsupported format: {$format}");
+                throw new \Exception('Unsupported export format');
         }
     }
 
     /**
      * Export student patterns report
      */
-    public function exportStudentPatternsReport(array $data, string $format)
+    public function exportStudentPatternsReport(array $data, string $format): \Illuminate\Http\Response|\Symfony\Component\HttpFoundation\BinaryFileResponse
     {
+        $user = Auth::user();
+        
         switch ($format) {
             case 'pdf':
-                return $this->exportStudentPatternsPDF($data);
+                return $this->generateStudentPatternsPDF($data, $user);
             case 'xlsx':
-                return $this->exportStudentPatternsExcel($data);
+                return Excel::download(new StudentPatternsExport($data), 'student-patterns.xlsx');
             case 'csv':
-                return $this->exportStudentPatternsCSV($data);
+                return $this->generateStudentPatternsCSV($data, $user);
             default:
-                throw new \Exception("Unsupported format: {$format}");
+                throw new \Exception('Unsupported export format');
         }
     }
 
     /**
      * Export aging report
      */
-    public function exportAgingReport(array $data, string $format)
+    public function exportAgingReport(array $data, string $format): \Illuminate\Http\Response|\Symfony\Component\HttpFoundation\BinaryFileResponse
     {
+        $user = Auth::user();
+        
         switch ($format) {
             case 'pdf':
-                return $this->exportAgingPDF($data);
+                return $this->generateAgingReportPDF($data, $user);
             case 'xlsx':
-                return $this->exportAgingExcel($data);
+                return Excel::download(new AgingReportExport($data), 'aging-report.xlsx');
             case 'csv':
-                return $this->exportAgingCSV($data);
+                return $this->generateAgingReportCSV($data, $user);
             default:
-                throw new \Exception("Unsupported format: {$format}");
+                throw new \Exception('Unsupported export format');
         }
     }
 
     /**
      * Export course revenue report
      */
-    public function exportCourseRevenueReport(array $data, string $format)
+    public function exportCourseRevenueReport(array $data, string $format): \Illuminate\Http\Response|\Symfony\Component\HttpFoundation\BinaryFileResponse
     {
+        $user = Auth::user();
+        
         switch ($format) {
             case 'pdf':
-                return $this->exportCourseRevenuePDF($data);
+                return $this->generateCourseRevenuePDF($data, $user);
             case 'xlsx':
-                return $this->exportCourseRevenueExcel($data);
+                return Excel::download(new CourseRevenueExport($data), 'course-revenue.xlsx');
             case 'csv':
-                return $this->exportCourseRevenueCSV($data);
+                return $this->generateCourseRevenueCSV($data, $user);
             default:
-                throw new \Exception("Unsupported format: {$format}");
+                throw new \Exception('Unsupported export format');
         }
     }
 
-    /**
-     * Export revenue report as PDF
-     */
-    private function exportRevenuePDF(array $data)
+    // PDF Generation Methods
+    private function generateRevenuePDF(array $data, $user): \Illuminate\Http\Response
     {
-        $pdf = Pdf::loadView('pdfs.reports.revenue', [
+        $pdf = \PDF::loadView('pdf.revenue-report', [
             'data' => $data,
-            'generated_at' => now()->format('M d, Y h:i A'),
-            'generated_by' => auth()->user()->name,
-            'title' => 'Revenue Report',
-            'period' => "{$data['period']} from {$data['start_date']} to {$data['end_date']}",
+            'user' => $user,
+            'generated_at' => now(),
         ]);
 
-        $filename = "revenue_report_{$data['period']}_{$data['start_date']}_{$data['end_date']}.pdf";
-
-        return $pdf->download($filename);
+        return $pdf->download('revenue-report.pdf');
     }
 
-    /**
-     * Export revenue report as Excel
-     */
-    private function exportRevenueExcel(array $data)
+    private function generatePaymentMethodsPDF(array $data, $user): \Illuminate\Http\Response
     {
-        $exportData = $this->prepareRevenueExcelData($data);
-        $filename = "revenue_report_{$data['period']}_{$data['start_date']}_{$data['end_date']}.xlsx";
-
-        return Excel::download(new class($exportData) {
-            private $data;
-
-            public function __construct(array $data)
-            {
-                $this->data = $data;
-            }
-
-            public function array(): array
-            {
-                return $this->data;
-            }
-
-            public function headings(): array
-            {
-                return ['Period', 'Gateway', 'Transaction Count', 'Total Amount', 'Average Amount'];
-            }
-        }, $filename);
-    }
-
-    /**
-     * Export revenue report as CSV
-     */
-    private function exportRevenueCSV(array $data)
-    {
-        $exportData = $this->prepareRevenueExcelData($data);
-        $filename = "revenue_report_{$data['period']}_{$data['start_date']}_{$data['end_date']}.csv";
-
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ];
-
-        $callback = function () use ($exportData) {
-            $file = fopen('php://output', 'w');
-
-            // Add CSV header
-            fputcsv($file, ['Period', 'Gateway', 'Transaction Count', 'Total Amount', 'Average Amount']);
-
-            // Add data rows
-            foreach ($exportData as $row) {
-                fputcsv($file, $row);
-            }
-
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
-    }
-
-    /**
-     * Prepare revenue data for Excel/CSV export
-     */
-    private function prepareRevenueExcelData(array $data): array
-    {
-        $rows = [];
-
-        foreach ($data['data'] as $gateway => $gatewayData) {
-            foreach ($gatewayData as $periodData) {
-                $rows[] = [
-                    $periodData['period'],
-                    ucfirst($gateway),
-                    $periodData['transaction_count'],
-                    $periodData['total_amount'],
-                    $periodData['average_amount'],
-                ];
-            }
-        }
-
-        return $rows;
-    }
-
-    /**
-     * Export payment methods report as PDF
-     */
-    private function exportPaymentMethodsPDF(array $data)
-    {
-        $pdf = Pdf::loadView('pdfs.reports.payment-methods', [
+        $pdf = \PDF::loadView('pdf.payment-methods-report', [
             'data' => $data,
-            'generated_at' => now()->format('M d, Y h:i A'),
-            'generated_by' => auth()->user()->name,
-            'title' => 'Payment Methods Analysis',
-            'period' => "From {$data['start_date']} to {$data['end_date']}",
+            'user' => $user,
+            'generated_at' => now(),
         ]);
 
-        $filename = "payment_methods_report_{$data['start_date']}_{$data['end_date']}.pdf";
-
-        return $pdf->download($filename);
+        return $pdf->download('payment-methods-report.pdf');
     }
 
-    /**
-     * Export payment methods report as Excel
-     */
-    private function exportPaymentMethodsExcel(array $data)
+    private function generateStudentPatternsPDF(array $data, $user): \Illuminate\Http\Response
     {
-        $exportData = $this->preparePaymentMethodsExcelData($data);
-        $filename = "payment_methods_report_{$data['start_date']}_{$data['end_date']}.xlsx";
-
-        return Excel::download(new class($exportData) {
-            private $data;
-
-            public function __construct(array $data)
-            {
-                $this->data = $data;
-            }
-
-            public function array(): array
-            {
-                return $this->data;
-            }
-
-            public function headings(): array
-            {
-                return [
-                    'Payment Method',
-                    'Transaction Count',
-                    'Total Amount',
-                    'Average Amount',
-                    'Minimum Amount',
-                    'Maximum Amount',
-                    'Success Rate (%)'
-                ];
-            }
-        }, $filename);
-    }
-
-    /**
-     * Prepare payment methods data for Excel/CSV export
-     */
-    private function preparePaymentMethodsExcelData(array $data): array
-    {
-        $rows = [];
-
-        foreach ($data['method_stats'] as $method => $stats) {
-            $rows[] = [
-                ucfirst(str_replace('_', ' ', $method)),
-                $stats['transaction_count'],
-                $stats['total_amount'],
-                $stats['average_amount'],
-                $stats['min_amount'],
-                $stats['max_amount'],
-                round($stats['success_rate'], 2),
-            ];
-        }
-
-        return $rows;
-    }
-
-    /**
-     * Export payment methods report as CSV
-     */
-    private function exportPaymentMethodsCSV(array $data)
-    {
-        $exportData = $this->preparePaymentMethodsExcelData($data);
-        $filename = "payment_methods_report_{$data['start_date']}_{$data['end_date']}.csv";
-
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ];
-
-        $callback = function () use ($exportData) {
-            $file = fopen('php://output', 'w');
-
-            fputcsv($file, [
-                'Payment Method',
-                'Transaction Count',
-                'Total Amount',
-                'Average Amount',
-                'Minimum Amount',
-                'Maximum Amount',
-                'Success Rate (%)'
-            ]);
-
-            foreach ($exportData as $row) {
-                fputcsv($file, $row);
-            }
-
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
-    }
-
-    /**
-     * Export student patterns report as PDF
-     */
-    private function exportStudentPatternsPDF(array $data)
-    {
-        $pdf = Pdf::loadView('pdfs.reports.student-patterns', [
+        $pdf = \PDF::loadView('pdf.student-patterns-report', [
             'data' => $data,
-            'generated_at' => now()->format('M d, Y h:i A'),
-'generated_by' => auth()->user()->name,
-            'title' => 'Student Payment Patterns',
-            'period' => "From {$data['start_date']} to {$data['end_date']}",
+            'user' => $user,
+            'generated_at' => now(),
         ]);
 
-        $filename = "student_patterns_report_{$data['start_date']}_{$data['end_date']}.pdf";
-
-        return $pdf->download($filename);
+        return $pdf->download('student-patterns-report.pdf');
     }
 
-    /**
-     * Export student patterns report as Excel
-     */
-    private function exportStudentPatternsExcel(array $data)
+    private function generateAgingReportPDF(array $data, $user): \Illuminate\Http\Response
     {
-        $exportData = $this->prepareStudentPatternsExcelData($data);
-        $filename = "student_patterns_report_{$data['start_date']}_{$data['end_date']}.xlsx";
-
-        return Excel::download(new class($exportData) {
-            private $data;
-
-            public function __construct(array $data)
-            {
-                $this->data = $data;
-            }
-
-            public function array(): array
-            {
-                return $this->data;
-            }
-
-            public function headings(): array
-            {
-                return [
-                    'Student Name',
-                    'Student ID',
-                    'Course',
-                    'Year Level',
-                    'Payment Count',
-                    'Total Paid',
-                    'Average Payment Amount',
-                    'First Payment Date',
-                    'Last Payment Date',
-                    'Payment Methods Used'
-                ];
-            }
-        }, $filename);
-    }
-
-    /**
-     * Prepare student patterns data for Excel/CSV export
-     */
-    private function prepareStudentPatternsExcelData(array $data): array
-    {
-        $rows = [];
-
-        foreach ($data['patterns'] as $pattern) {
-            $rows[] = [
-                $pattern['student_name'],
-                $pattern['student_id_number'],
-                $pattern['course'],
-                $pattern['year_level'],
-                $pattern['payment_count'],
-                $pattern['total_paid'],
-                $pattern['average_payment_amount'],
-                $pattern['first_payment_date'],
-                $pattern['last_payment_date'],
-                implode(', ', $pattern['payment_methods_used']),
-            ];
-        }
-
-        return $rows;
-    }
-
-    /**
-     * Export student patterns report as CSV
-     */
-    private function exportStudentPatternsCSV(array $data)
-    {
-        $exportData = $this->prepareStudentPatternsExcelData($data);
-        $filename = "student_patterns_report_{$data['start_date']}_{$data['end_date']}.csv";
-
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ];
-
-        $callback = function () use ($exportData) {
-            $file = fopen('php://output', 'w');
-
-            fputcsv($file, [
-                'Student Name',
-                'Student ID',
-                'Course',
-                'Year Level',
-                'Payment Count',
-                'Total Paid',
-                'Average Payment Amount',
-                'First Payment Date',
-                'Last Payment Date',
-                'Payment Methods Used'
-            ]);
-
-            foreach ($exportData as $row) {
-                fputcsv($file, $row);
-            }
-
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
-    }
-
-    /**
-     * Export aging report as PDF
-     */
-    private function exportAgingPDF(array $data)
-    {
-        $pdf = Pdf::loadView('pdfs.reports.aging', [
+        $pdf = \PDF::loadView('pdf.aging-report', [
             'data' => $data,
-            'generated_at' => now()->format('M d, Y h:i A'),
-            'generated_by' => auth()->user()->name,
-            'title' => 'Accounts Receivable Aging Report',
-            'as_of_date' => $data['as_of_date'],
+            'user' => $user,
+            'generated_at' => now(),
         ]);
 
-        $filename = "aging_report_{$data['as_of_date']}.pdf";
-
-        return $pdf->download($filename);
+        return $pdf->download('aging-report.pdf');
     }
 
-    /**
-     * Export aging report as Excel
-     */
-    private function exportAgingExcel(array $data)
+    private function generateCourseRevenuePDF(array $data, $user): \Illuminate\Http\Response
     {
-        $exportData = $this->prepareAgingExcelData($data);
-        $filename = "aging_report_{$data['as_of_date']}.xlsx";
-
-        return Excel::download(new class($exportData) {
-            private $data;
-
-            public function __construct(array $data)
-            {
-                $this->data = $data;
-            }
-
-            public function array(): array
-            {
-                return $this->data;
-            }
-
-            public function headings(): array
-            {
-                return [
-                    'Aging Bucket',
-                    'Student Name',
-                    'Student ID',
-                    'Course',
-                    'Year Level',
-                    'Outstanding Balance',
-                    'Days Since Last Payment',
-                    'Last Payment Date',
-                    'Status'
-                ];
-            }
-        }, $filename);
-    }
-
-    /**
-     * Prepare aging data for Excel/CSV export
-     */
-    private function prepareAgingExcelData(array $data): array
-    {
-        $rows = [];
-
-        foreach ($data['aging_data'] as $bucket => $students) {
-            foreach ($students as $student) {
-                $rows[] = [
-                    $bucket,
-                    $student['student_name'],
-                    $student['student_id_number'],
-                    $student['course'],
-                    $student['year_level'],
-                    $student['outstanding_balance'],
-                    $student['days_since_last_payment'],
-                    $student['last_payment_date'],
-                    $student['status'],
-                ];
-            }
-        }
-
-        return $rows;
-    }
-
-    /**
-     * Export aging report as CSV
-     */
-    private function exportAgingCSV(array $data)
-    {
-        $exportData = $this->prepareAgingExcelData($data);
-        $filename = "aging_report_{$data['as_of_date']}.csv";
-
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ];
-
-        $callback = function () use ($exportData) {
-            $file = fopen('php://output', 'w');
-
-            fputcsv($file, [
-                'Aging Bucket',
-                'Student Name',
-                'Student ID',
-                'Course',
-                'Year Level',
-                'Outstanding Balance',
-                'Days Since Last Payment',
-                'Last Payment Date',
-                'Status'
-            ]);
-
-            foreach ($exportData as $row) {
-                fputcsv($file, $row);
-            }
-
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
-    }
-
-    /**
-     * Export course revenue report as PDF
-     */
-    private function exportCourseRevenuePDF(array $data)
-    {
-        $pdf = Pdf::loadView('pdfs.reports.course-revenue', [
+        $pdf = \PDF::loadView('pdf.course-revenue-report', [
             'data' => $data,
-            'generated_at' => now()->format('M d, Y h:i A'),
-            'generated_by' => auth()->user()->name,
-            'title' => 'Course Revenue Analysis',
-            'period' => "{$data['school_year']} - {$data['semester']} Semester",
+            'user' => $user,
+            'generated_at' => now(),
         ]);
 
-        $filename = "course_revenue_{$data['school_year']}_{$data['semester']}.pdf";
-
-        return $pdf->download($filename);
+        return $pdf->download('course-revenue-report.pdf');
     }
 
-    /**
-     * Export course revenue report as Excel
-     */
-    private function exportCourseRevenueExcel(array $data)
+    // Excel Generation Methods
+    private function generateRevenueExcel(array $data, $user): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
-        $exportData = $this->prepareCourseRevenueExcelData($data);
-        $filename = "course_revenue_{$data['school_year']}_{$data['semester']}.xlsx";
-
-        return Excel::download(new class($exportData) {
-            private $data;
-
-            public function __construct(array $data)
-            {
-                $this->data = $data;
-            }
-
-            public function array(): array
-            {
-                return $this->data;
-            }
-
-            public function headings(): array
-            {
-                return [
-                    'Course',
-                    'Student Count',
-                    'Total Revenue',
-                    'Revenue per Student'
-                ];
-            }
-        }, $filename);
+        return Excel::download(new RevenueExport($data), 'revenue-report.xlsx');
     }
 
-    /**
-     * Prepare course revenue data for Excel/CSV export
-     */
-    private function prepareCourseRevenueExcelData(array $data): array
+    private function generatePaymentMethodsExcel(array $data, $user): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
-        $rows = [];
-
-        foreach ($data['course_data'] as $course) {
-            $rows[] = [
-                $course['course'],
-                $course['student_count'],
-                $course['total_revenue'],
-                $course['revenue_per_student'],
-            ];
-        }
-
-        return $rows;
+        return Excel::download(new PaymentsExport($data), 'payment-methods.xlsx');
     }
 
-    /**
-     * Export course revenue report as CSV
-     */
-    private function exportCourseRevenueCSV(array $data)
+    // CSV Generation Methods
+    private function generateRevenueCSV(array $data, $user): \Illuminate\Http\Response
     {
-        $exportData = $this->prepareCourseRevenueExcelData($data);
-        $filename = "course_revenue_{$data['school_year']}_{$data['semester']}.csv";
+        $filename = 'revenue-report-' . date('Y-m-d') . '.csv';
+        $handle = fopen('php://temp', 'w');
 
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ];
+        // CSV Header
+        fputcsv($handle, ['Period', 'Total Amount', 'Transaction Count']);
 
-        $callback = function () use ($exportData) {
-            $file = fopen('php://output', 'w');
-
-            fputcsv($file, [
-                'Course',
-                'Student Count',
-                'Total Revenue',
-                'Revenue per Student'
+        // CSV Data
+        foreach ($data['data'] as $row) {
+            fputcsv($handle, [
+                $row['period'],
+                $row['total_amount'],
+                $row['transaction_count'],
             ]);
+        }
 
-            foreach ($exportData as $row) {
-                fputcsv($file, $row);
-            }
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
 
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
+        return response($csv)
+            ->header('Content-Type', 'text/csv')
+            ->header('Content-Disposition', "attachment; filename=\"{$filename}\"");
     }
 
-    /**
-     * Generate scheduled reports and send via email
-     */
-    public function generateScheduledReport(string $reportType, array $parameters, array $recipients)
+    private function generatePaymentMethodsCSV(array $data, $user): \Illuminate\Http\Response
     {
-        try {
-            // Generate the report based on type
-            $data = $this->generateReportData($reportType, $parameters);
+        $filename = 'payment-methods-' . date('Y-m-d') . '.csv';
+        $handle = fopen('php://temp', 'w');
 
-            // Export to PDF
-            $filename = $this->generateFilename($reportType, $parameters);
-            $pdf = Pdf::loadView("pdfs.reports.{$reportType}", [
-                'data' => $data,
-                'generated_at' => now()->format('M d, Y h:i A'),
-                'generated_by' => 'System',
-                'is_scheduled' => true,
-                'parameters' => $parameters,
+        // CSV Header
+        fputcsv($handle, ['Payment Method', 'Amount', 'Count', 'Percentage']);
+
+        // CSV Data
+        foreach ($data['methods'] as $method) {
+            fputcsv($handle, [
+                $method['method'],
+                $method['amount'],
+                $method['count'],
+                $method['percentage'],
             ]);
+        }
 
-            // Save to storage temporarily
-            $path = 'reports/scheduled/' . $filename;
-            Storage::put($path, $pdf->output());
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
 
-            // Send email to recipients
-            $this->sendScheduledReportEmail($recipients, $filename, $path, $reportType);
+        return response($csv)
+            ->header('Content-Type', 'text/csv')
+            ->header('Content-Disposition', "attachment; filename=\"{$filename}\"");
+    }
 
-            // Clean up after sending
-            Storage::delete($path);
+    private function generateStudentPatternsCSV(array $data, $user): \Illuminate\Http\Response
+    {
+        $filename = 'student-patterns-' . date('Y-m-d') . '.csv';
+        $handle = fopen('php://temp', 'w');
 
-            Log::info("Scheduled report generated and sent", [
-                'report_type' => $reportType,
-                'recipients' => $recipients,
-                'filename' => $filename
+        // CSV Header
+        fputcsv($handle, ['Student ID', 'Student Name', 'Total Payments', 'Average Amount', 'Payment Frequency']);
+
+        // CSV Data - Based on analysis type
+        if (isset($data['timeliness'])) {
+            fputcsv($handle, ['Timeliness Analysis Data would go here']);
+        }
+
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+
+        return response($csv)
+            ->header('Content-Type', 'text/csv')
+            ->header('Content-Disposition', "attachment; filename=\"{$filename}\"");
+    }
+
+    private function generateAgingReportCSV(array $data, $user): \Illuminate\Http\Response
+    {
+        $filename = 'aging-report-' . date('Y-m-d') . '.csv';
+        $handle = fopen('php://temp', 'w');
+
+        // CSV Header
+        fputcsv($handle, ['Student ID', 'Student Name', 'Outstanding Balance', 'Days Outstanding', 'Age Bucket']);
+
+        // CSV Data
+        foreach ($data['students'] as $student) {
+            fputcsv($handle, [
+                $student['student_id_number'],
+                $student['student_name'],
+                $student['outstanding_balance'],
+                $student['days_outstanding'],
+                $student['age_bucket'],
             ]);
+        }
 
-            return true;
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
 
-        } catch (\Exception $e) {
-            Log::error("Failed to generate scheduled report", [
-                'report_type' => $reportType,
-                'error' => $e->getMessage(),
-                'parameters' => $parameters,
+        return response($csv)
+            ->header('Content-Type', 'text/csv')
+            ->header('Content-Disposition', "attachment; filename=\"{$filename}\"");
+    }
+
+    private function generateCourseRevenueCSV(array $data, $user): \Illuminate\Http\Response
+    {
+        $filename = 'course-revenue-' . date('Y-m-d') . '.csv';
+        $handle = fopen('php://temp', 'w');
+
+        // CSV Header
+        fputcsv($handle, ['Group Key', 'Total Amount', 'Transaction Count']);
+
+        // CSV Data
+        foreach ($data['data'] as $row) {
+            fputcsv($handle, [
+                $row['group_key'],
+                $row['total_amount'],
+                $row['transaction_count'],
             ]);
-
-            return false;
         }
-    }
 
-    /**
-     * Generate report data based on type
-     */
-    private function generateReportData(string $reportType, array $parameters): array
-    {
-        switch ($reportType) {
-            case 'revenue':
-                return $this->generateRevenueData($parameters);
-            case 'payment_methods':
-                return $this->generatePaymentMethodsData($parameters);
-            case 'aging':
-                return $this->generateAgingData($parameters);
-            default:
-                throw new \Exception("Unknown report type: {$reportType}");
-        }
-    }
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
 
-    /**
-     * Generate filename for report
-     */
-    private function generateFilename(string $reportType, array $parameters): string
-    {
-        $timestamp = now()->format('Y-m-d_H-i-s');
-
-        switch ($reportType) {
-            case 'revenue':
-                return "revenue_report_{$timestamp}.pdf";
-            case 'payment_methods':
-                return "payment_methods_report_{$timestamp}.pdf";
-            case 'aging':
-                return "aging_report_" . ($parameters['as_of_date'] ?? $timestamp) . ".pdf";
-            default:
-                return "{$reportType}_report_{$timestamp}.pdf";
-        }
-    }
-
-    /**
-     * Send scheduled report via email
-     */
-    private function sendScheduledReportEmail(array $recipients, string $filename, string $path, string $reportType)
-    {
-        foreach ($recipients as $recipient) {
-            try {
-                Mail::to($recipient)
-                    ->subject("Scheduled {$reportType} Report")
-                    ->view('emails.reports.scheduled', [
-                        'filename' => $filename,
-                        'report_type' => $reportType,
-                        'recipient' => $recipient,
-                    ])
-                    ->attach(Storage::path($path), [
-                        'as' => $filename,
-                        'mime' => 'application/pdf',
-                    ])
-                    ->send();
-
-                Log::info("Scheduled report sent to recipient", [
-                    'recipient' => $recipient,
-                    'filename' => $filename
-                ]);
-
-            } catch (\Exception $e) {
-                Log::error("Failed to send scheduled report email", [
-'recipient' => $recipient,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
+        return response($csv)
+            ->header('Content-Type', 'text/csv')
+            ->header('Content-Disposition', "attachment; filename=\"{$filename}\"");
     }
 }

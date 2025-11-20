@@ -18,11 +18,17 @@ class ReportController extends Controller
     public function __construct(
         private ReportExportService $reportExportService
     ) {
-        $this->middleware(['auth', 'verified', 'role:admin,accounting']);
+        $this->middleware(function ($request, $next) {
+            $user = $request->user();
+            if (!$user || (!$user->isAdmin() && !$user->isAccounting())) {
+                abort(403, 'Unauthorized access');
+            }
+            return $next($request);
+        });
     }
 
     /**
-     * Display the reports dashboard
+     * Display reports dashboard
      */
     public function index()
     {
@@ -119,28 +125,25 @@ class ReportController extends Controller
     public function studentPatterns(Request $request)
     {
         $request->validate([
-            'period' => 'required|in:monthly,quarterly,yearly',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
-            'course' => 'nullable|exists:subjects,name',
-            'year_level' => 'nullable|in:1,2,3,4,5',
             'format' => 'nullable|in:web,pdf,xlsx,csv',
+            'analysis_type' => 'nullable|in:timeliness,frequency,amount,delinquency',
         ]);
 
         try {
             $startDate = $request->input('start_date');
             $endDate = $request->input('end_date');
-            $course = $request->input('course');
-            $yearLevel = $request->input('year_level');
             $format = $request->input('format', 'web');
+            $analysisType = $request->input('analysis_type', 'all');
 
-            $data = $this->generateStudentPatternsData($startDate, $endDate, $course, $yearLevel);
+            $data = $this->generateStudentPatternsData($startDate, $endDate, $analysisType);
 
             if ($format === 'web') {
                 return Inertia::render('Reports/StudentPatterns', [
                     'data' => $data,
-                    'filters' => $request->only(['period', 'start_date', 'end_date', 'course', 'year_level']),
-                    'chartData' => $this->prepareStudentPatternsChartData($data),
+                    'filters' => $request->only(['start_date', 'end_date', 'analysis_type']),
+                    'chartData' => $this->prepareStudentPatternsChartData($data, $analysisType),
                 ]);
             }
 
@@ -157,7 +160,7 @@ class ReportController extends Controller
     }
 
     /**
-     * Generate outstanding balances aging report
+     * Generate aging report
      */
     public function agingReport(Request $request)
     {
@@ -171,7 +174,7 @@ class ReportController extends Controller
 
         try {
             $asOfDate = $request->input('as_of_date');
-            $agingBuckets = $request->input('aging_buckets', [30, 60, 90, 180]);
+            $agingBuckets = $request->input('aging_buckets', [30, 60, 90, 180, 365]);
             $includeGraduated = $request->input('include_graduated', false);
             $format = $request->input('format', 'web');
 
@@ -198,27 +201,29 @@ class ReportController extends Controller
     }
 
     /**
-     * Generate course/program revenue analysis
+     * Generate course revenue analysis report
      */
     public function courseRevenue(Request $request)
     {
         $request->validate([
-            'school_year' => 'required|string',
-            'semester' => 'required|in:first,second,summer',
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
             'format' => 'nullable|in:web,pdf,xlsx,csv',
+            'group_by' => 'nullable|in:course,year_level,department',
         ]);
 
         try {
-            $schoolYear = $request->input('school_year');
-            $semester = $request->input('semester');
+            $startDate = $request->input('start_date');
+            $endDate = $request->input('end_date');
             $format = $request->input('format', 'web');
+            $groupBy = $request->input('group_by', 'course');
 
-            $data = $this->generateCourseRevenueData($schoolYear, $semester);
+            $data = $this->generateCourseRevenueData($startDate, $endDate, $groupBy);
 
             if ($format === 'web') {
                 return Inertia::render('Reports/CourseRevenue', [
                     'data' => $data,
-                    'filters' => $request->only(['school_year', 'semester']),
+                    'filters' => $request->only(['start_date', 'end_date', 'group_by']),
                     'chartData' => $this->prepareCourseRevenueChartData($data),
                 ]);
             }
@@ -236,28 +241,37 @@ class ReportController extends Controller
     }
 
     /**
-     * API endpoint for real-time dashboard data
+     * Get dashboard data for reports
      */
-    public function dashboardData(Request $request)
+    public function dashboardData()
     {
         try {
-            $period = $request->input('period', 'month'); // day, week, month, year
+            $data = [
+                'total_payments' => Payment::where('status', 'completed')->count(),
+                'total_revenue' => Payment::where('status', 'completed')->sum('amount'),
+                'pending_payments' => Payment::where('status', 'pending')->count(),
+                'failed_payments' => Payment::where('status', 'failed')->count(),
+                'recent_payments' => Payment::with(['student.user'])
+                    ->where('created_at', '>=', now()->subDays(7))
+                    ->orderBy('created_at', 'desc')
+                    ->take(10)
+                    ->get(),
+                'payment_methods_breakdown' => $this->getPaymentMethodsBreakdown(),
+            ];
 
             return response()->json([
-                'revenue_metrics' => $this->getRevenueMetrics($period),
-                'payment_stats' => $this->getPaymentStats($period),
-                'student_stats' => $this->getStudentStats($period),
-                'trending_data' => $this->getTrendingData($period),
+                'success' => true,
+                'data' => $data,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Dashboard data fetch failed', [
+            Log::error('Failed to get reports dashboard data', [
                 'error' => $e->getMessage(),
-                'period' => $request->input('period'),
             ]);
 
             return response()->json([
-                'error' => 'Failed to fetch dashboard data'
+                'success' => false,
+                'message' => 'Failed to load dashboard data',
             ], 500);
         }
     }
@@ -268,56 +282,47 @@ class ReportController extends Controller
     private function generateRevenueData(string $period, string $startDate, string $endDate, string $gateway): array
     {
         $query = Payment::where('status', 'completed')
-            ->whereBetween('paid_at', [$startDate, $endDate]);
+            ->whereBetween('created_at', [$startDate, $endDate]);
 
         if ($gateway !== 'all') {
-            $query->where('payment_method', $gateway);
+            $query->whereHas('latestGatewayDetail', function ($q) use ($gateway) {
+                $q->where('gateway', $gateway);
+            });
         }
 
-        // Group by period
-        $groupBy = match ($period) {
-            'daily' => DB::raw('DATE(paid_at)'),
-            'weekly' => DB::raw('YEARWEEK(paid_at)'),
-            'monthly' => DB::raw('DATE_FORMAT(paid_at, "%Y-%m")'),
-            'yearly' => DB::raw('YEAR(paid_at)'),
-        };
-
-        $revenueData = $query->select([
-            'payment_method as gateway',
-            DB::raw('COUNT(*) as transaction_count'),
-            DB::raw('SUM(amount) as total_amount'),
-            DB::raw('AVG(amount) as average_amount'),
-            DB::raw($groupBy . ' as period'),
-        ])
-        ->groupBy('payment_method', 'period')
-        ->orderBy('period')
-        ->get()
-        ->groupBy('gateway');
-
-        // Calculate totals and metrics
-        $totalRevenue = $revenueData->flatten()->sum('total_amount');
-        $totalTransactions = $revenueData->flatten()->sum('transaction_count');
-        $averageTransactionValue = $totalTransactions > 0 ? $totalRevenue / $totalTransactions : 0;
+        switch ($period) {
+            case 'daily':
+                $query->selectRaw('DATE(created_at) as period, SUM(amount) as total_amount, COUNT(*) as transaction_count')
+                    ->groupBy('period')
+                    ->orderBy('period');
+                break;
+            case 'weekly':
+                $query->selectRaw('YEAR(created_at) as year, WEEK(created_at) as week, SUM(amount) as total_amount, COUNT(*) as transaction_count')
+                    ->groupBy('year', 'week')
+                    ->orderBy('year', 'week');
+                break;
+            case 'monthly':
+                $query->selectRaw('DATE_FORMAT(created_at, "%Y-%m") as period, SUM(amount) as total_amount, COUNT(*) as transaction_count')
+                    ->groupBy('period')
+                    ->orderBy('period');
+                break;
+            case 'yearly':
+                $query->selectRaw('YEAR(created_at) as period, SUM(amount) as total_amount, COUNT(*) as transaction_count')
+                    ->groupBy('period')
+                    ->orderBy('period');
+                break;
+        }
 
         return [
             'period' => $period,
             'start_date' => $startDate,
             'end_date' => $endDate,
-            'gateway_filter' => $gateway,
-            'data' => $revenueData,
+            'gateway' => $gateway,
+            'data' => $query->get(),
             'summary' => [
-                'total_revenue' => $totalRevenue,
-                'total_transactions' => $totalTransactions,
-                'average_transaction_value' => $averageTransactionValue,
-                'gateway_breakdown' => $revenueData->mapWithKeys(function ($gatewayData, $gateway) {
-                    return [
-                        $gateway => [
-                            'total_amount' => $gatewayData->sum('total_amount'),
-                            'transaction_count' => $gatewayData->sum('transaction_count'),
-                            'average_amount' => $gatewayData->avg('total_amount'),
-                        ]
-                    ];
-                }),
+                'total_amount' => $query->sum('amount') ?? 0,
+                'total_transactions' => $query->count() ?? 0,
+                'average_amount' => $query->avg('amount') ?? 0,
             ],
         ];
     }
@@ -327,44 +332,29 @@ class ReportController extends Controller
      */
     private function generatePaymentMethodsData(string $startDate, string $endDate): array
     {
-        $payments = Payment::whereBetween('paid_at', [$startDate, $endDate])
-            ->where('status', 'completed')
-            ->get()
-            ->groupBy('payment_method');
+        $payments = Payment::where('status', 'completed')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->with('latestGatewayDetail')
+            ->get();
 
-        $methodStats = [];
-        foreach ($payments as $method => $methodPayments) {
-            $methodStats[$method] = [
-                'transaction_count' => $methodPayments->count(),
-                'total_amount' => $methodPayments->sum('amount'),
-                'average_amount' => $methodPayments->avg('amount'),
-                'min_amount' => $methodPayments->min('amount'),
-                'max_amount' => $methodPayments->max('amount'),
-                'success_rate' => 100, // All completed payments here
+        $methods = $payments->groupBy(function ($payment) {
+            return $payment->latestGatewayDetail->gateway ?? 'unknown';
+        })->map(function ($payments, $method) {
+            return [
+                'method' => $method,
+                'amount' => $payments->sum('amount'),
+                'count' => $payments->count(),
+                'percentage' => ($payments->sum('amount') / $payments->sum('amount')) * 100,
             ];
-        }
-
-        // Include failed attempts for success rate calculation
-        $attempts = Payment::whereBetween('created_at', [$startDate, $endDate])
-            ->get()
-            ->groupBy('payment_method');
-
-        foreach ($attempts as $method => $allAttempts) {
-            $completedCount = $allAttempts->where('status', 'completed')->count();
-            $totalAttemptsCount = $allAttempts->count();
-            $methodStats[$method]['success_rate'] = $totalAttemptsCount > 0
-                ? ($completedCount / $totalAttemptsCount) * 100
-                : 0;
-        }
+        })->values();
 
         return [
             'start_date' => $startDate,
             'end_date' => $endDate,
-            'method_stats' => $methodStats,
+            'methods' => $methods,
             'summary' => [
-                'total_methods' => count($methodStats),
-                'most_used_method' => collect($methodStats)->sortByDesc('transaction_count')->keys()->first(),
-                'highest_revenue_method' => collect($methodStats)->sortByDesc('total_amount')->keys()->first(),
+                'total_amount' => $payments->sum('amount'),
+                'total_transactions' => $payments->count(),
             ],
         ];
     }
@@ -372,58 +362,36 @@ class ReportController extends Controller
     /**
      * Generate student patterns data
      */
-    private function generateStudentPatternsData(string $startDate, string $endDate, ?string $course, ?int $yearLevel): array
+    private function generateStudentPatternsData(string $startDate, string $endDate, string $analysisType): array
     {
-        $query = Student::with(['user', 'payments']);
-
-        if ($course) {
-            $query->where('course', $course);
-        }
-
-        if ($yearLevel) {
-            $query->where('year_level', $yearLevel);
-        }
-
-        $students = $query->get();
-
-        $patterns = [];
-        foreach ($students as $student) {
-            $payments = $student->payments()
-                ->where('status', 'completed')
-                ->whereBetween('paid_at', [$startDate, $endDate])
-                ->get();
-
-            if ($payments->count() > 0) {
-                $patterns[] = [
-                    'student_id' => $student->id,
-                    'student_name' => $student->user->name,
-                    'student_id_number' => $student->student_id,
-                    'course' => $student->course,
-                    'year_level' => $student->year_level,
-                    'payment_count' => $payments->count(),
-                    'total_paid' => $payments->sum('amount'),
-                    'average_payment_amount' => $payments->avg('amount'),
-                    'first_payment_date' => $payments->min('paid_at'),
-                    'last_payment_date' => $payments->max('paid_at'),
-                    'payment_methods_used' => $payments->pluck('payment_method')->unique()->values(),
-                ];
-            }
-        }
-
-        return [
+        $data = [
             'start_date' => $startDate,
             'end_date' => $endDate,
-            'filters' => [
-                'course' => $course,
-                'year_level' => $yearLevel,
-            ],
-            'patterns' => $patterns,
-            'summary' => [
-                'total_students_with_payments' => count($patterns),
-                'average_payments_per_student' => collect($patterns)->avg('payment_count'),
-                'average_payment_amount' => collect($patterns)->avg('average_payment_amount'),
-            ],
+            'analysis_type' => $analysisType,
         ];
+
+        switch ($analysisType) {
+            case 'timeliness':
+                $data['timeliness'] = $this->analyzePaymentTimeliness($startDate, $endDate);
+                break;
+            case 'frequency':
+                $data['frequency'] = $this->analyzePaymentFrequency($startDate, $endDate);
+                break;
+            case 'amount':
+                $data['amount_patterns'] = $this->analyzePaymentAmounts($startDate, $endDate);
+                break;
+            case 'delinquency':
+                $data['delinquency'] = $this->analyzeDelinquency($startDate, $endDate);
+                break;
+            default:
+                $data['timeliness'] = $this->analyzePaymentTimeliness($startDate, $endDate);
+                $data['frequency'] = $this->analyzePaymentFrequency($startDate, $endDate);
+                $data['amount_patterns'] = $this->analyzePaymentAmounts($startDate, $endDate);
+                $data['delinquency'] = $this->analyzeDelinquency($startDate, $endDate);
+                break;
+        }
+
+        return $data;
     }
 
     /**
@@ -431,64 +399,43 @@ class ReportController extends Controller
      */
     private function generateAgingReportData(string $asOfDate, array $agingBuckets, bool $includeGraduated): array
     {
-        $students = Student::with(['user', 'studentFeeItems']);
+        $students = Student::with(['user', 'feeItems']);
 
         if (!$includeGraduated) {
             $students->where('status', 'active');
         }
 
-        $students = $students->get();
-
         $agingData = [];
         $totalOutstanding = 0;
 
         foreach ($students as $student) {
-            $outstandingBalance = $student->studentFeeItems->sum('balance');
+            $outstandingBalance = $student->feeItems->sum('balance');
 
             if ($outstandingBalance > 0) {
                 $lastPayment = $student->payments()
                     ->where('status', 'completed')
-                    ->orderBy('paid_at', 'desc')
+                    ->orderBy('created_at', 'desc')
                     ->first();
 
-                $daysSinceLastPayment = $lastPayment
-                    ? $lastPayment->paid_at->diffInDays($asOfDate)
-                    : 999; // No payments made
+                $daysOutstanding = $lastPayment 
+                    ? max(0, now()->diffInDays($lastPayment->created_at))
+                    : 999;
 
-                // Determine aging bucket
-                $agingBucket = '90+';
-                foreach ($agingBuckets as $bucket) {
-                    if ($daysSinceLastPayment <= $bucket) {
-                        $agingBucket = $bucket <= 30 ? '0-30' : ($bucket <= 60 ? '31-60' : ($bucket <= 90 ? '61-90' : '90+'));
-                        break;
-                    }
-                }
+                $ageBucket = $this->determineAgeBucket($daysOutstanding, $agingBuckets);
 
-                $agingData[$agingBucket][] = [
+                $agingData[] = [
                     'student_id' => $student->id,
                     'student_name' => $student->user->name,
                     'student_id_number' => $student->student_id,
+                    'outstanding_balance' => $outstandingBalance,
+                    'days_outstanding' => $daysOutstanding,
+                    'age_bucket' => $ageBucket,
+                    'last_payment_date' => $lastPayment?->created_at,
                     'course' => $student->course,
                     'year_level' => $student->year_level,
-                    'outstanding_balance' => $outstandingBalance,
-                    'days_since_last_payment' => $daysSinceLastPayment,
-                    'last_payment_date' => $lastPayment?->paid_at,
-                    'status' => $student->status,
                 ];
 
                 $totalOutstanding += $outstandingBalance;
-            }
-        }
-
-        // Sort aging buckets in order
-        $orderedBuckets = ['0-30', '31-60', '61-90', '90+'];
-        $finalAgingData = [];
-
-        foreach ($orderedBuckets as $bucket) {
-            if (isset($agingData[$bucket])) {
-                $finalAgingData[$bucket] = $agingData[$bucket];
-            } else {
-                $finalAgingData[$bucket] = [];
             }
         }
 
@@ -496,323 +443,301 @@ class ReportController extends Controller
             'as_of_date' => $asOfDate,
             'aging_buckets' => $agingBuckets,
             'include_graduated' => $includeGraduated,
-            'aging_data' => $finalAgingData,
+            'students' => $agingData,
             'summary' => [
-                'total_outstanding_balance' => $totalOutstanding,
-                'total_students_with_balance' => collect($finalAgingData)->flatten()->count(),
-                'average_days_since_payment' => collect($finalAgingData)->flatten()->avg('days_since_last_payment'),
-                'bucket_summary' => collect($finalAgingData)->mapWithKeys(function ($bucket, $key) {
-                    return [
-                        $key => [
-                            'count' => count($bucket),
-                            'total_balance' => collect($bucket)->sum('outstanding_balance'),
-                            'average_balance' => count($bucket) > 0 ? collect($bucket)->avg('outstanding_balance') : 0,
-                        ]
-                    ];
-                }),
+                'total_students' => count($agingData),
+                'total_outstanding' => $totalOutstanding,
+                'average_balance' => count($agingData) > 0 ? $totalOutstanding / count($agingData) : 0,
             ],
+            'bucket_summary' => $this->generateBucketSummary($agingData, $agingBuckets),
         ];
     }
 
     /**
      * Generate course revenue data
      */
-    private function generateCourseRevenueData(string $schoolYear, string $semester): array
+    private function generateCourseRevenueData(string $startDate, string $endDate, string $groupBy): array
     {
-        // This would need to be implemented based on your specific course/fee structure
-        // This is a template that shows the structure
+        $query = Payment::where('status', 'completed')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->with('student');
 
-        $courses = DB::table('students')
-            ->select('course', DB::raw('COUNT(*) as student_count'))
-            ->where('school_year', $schoolYear)
-            ->where('semester', $semester)
-            ->groupBy('course')
-            ->get();
-
-        $courseData = [];
-        foreach ($courses as $course) {
-            // Calculate revenue for this course
-            $revenue = Payment::join('students', 'payments.student_id', '=', 'students.id')
-                ->where('students.course', $course->course)
-                ->where('students.school_year', $schoolYear)
-                ->where('students.semester', $semester)
-                ->where('payments.status', 'completed')
-                ->sum('payments.amount');
-
-            $courseData[] = [
-                'course' => $course->course,
-                'student_count' => $course->student_count,
-                'total_revenue' => $revenue,
-                'revenue_per_student' => $course->student_count > 0 ? $revenue / $course->student_count : 0,
-            ];
+        switch ($groupBy) {
+            case 'course':
+                $query->selectRaw('student.course as group_key, SUM(amount) as total_amount, COUNT(*) as transaction_count')
+                        ->groupBy('student.course');
+                break;
+            case 'year_level':
+                $query->selectRaw('student.year_level as group_key, SUM(amount) as total_amount, COUNT(*) as transaction_count')
+                        ->groupBy('student.year_level');
+                break;
+            case 'department':
+                $query->selectRaw('SUBSTRING(student.course, 1, 3) as group_key, SUM(amount) as total_amount, COUNT(*) as transaction_count')
+                        ->groupBy('group_key');
+                break;
         }
 
         return [
-            'school_year' => $schoolYear,
-            'semester' => $semester,
-            'course_data' => $courseData,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'group_by' => $groupBy,
+            'data' => $query->get(),
             'summary' => [
-                'total_students' => $courses->sum('student_count'),
-                'total_revenue' => collect($courseData)->sum('total_revenue'),
-                'average_revenue_per_student' => collect($courseData)->avg('revenue_per_student'),
+                'total_amount' => $query->sum('amount') ?? 0,
+                'total_transactions' => $query->count() ?? 0,
+                'unique_courses' => $query->distinct('group_key')->count('group_key') ?? 0,
             ],
         ];
     }
 
-    // Helper methods for chart data preparation
-    private function prepareRevenueChartData(array $data): array
-    {
-        return [
-            'labels' => $data['data']->keys()->toArray(),
-            'datasets' => $data['data']->map(function ($gatewayData) {
-                return [
-                    'label' => ucfirst($gatewayData->first()->gateway),
-                    'data' => $gatewayData->pluck('total_amount')->toArray(),
-                    'backgroundColor' => [
-                        'rgba(54, 162, 235, 0.2)',
-                        'rgba(255, 99, 132, 0.2)',
-                        'rgba(255, 206, 86, 0.2)',
-                        'rgba(75, 192, 192, 0.2)',
-                    ],
-                    'borderColor' => [
-                        'rgba(54, 162, 235, 1)',
-                        'rgba(255, 99, 132, 1)',
-                        'rgba(255, 206, 86, 1)',
-                        'rgba(75, 192, 192, 1)',
-                    ],
-                ];
-            })->values()->toArray(),
-        ];
-    }
-
-    private function preparePaymentMethodsChartData(array $data): array
-    {
-        $labels = array_keys($data['method_stats']);
-        $values = array_column($data['method_stats'], 'total_amount');
-
-        return [
-            'labels' => $labels,
-            'datasets' => [[
-                'data' => $values,
-                'backgroundColor' => [
-                    'rgba(54, 162, 235, 0.2)',
-                    'rgba(255, 99, 132, 0.2)',
-                    'rgba(255, 206, 86, 0.2)',
-                    'rgba(75, 192, 192, 0.2)',
-                    'rgba(153, 102, 255, 0.2)',
-                ],
-                'borderColor' => [
-                    'rgba(54, 162, 235, 1)',
-                    'rgba(255, 99, 132, 1)',
-                    'rgba(255, 206, 86, 1)',
-                    'rgba(75, 192, 192, 1)',
-                    'rgba(153, 102, 255, 1)',
-                ],
-            ]],
-        ];
-    }
-
-    private function prepareStudentPatternsChartData(array $data): array
-    {
-        // Implementation depends on specific patterns you want to visualize
-        return [
-            'labels' => ['Course A', 'Course B', 'Course C', 'Course D'],
-            'datasets' => [
-                [
-                    'label' => 'Average Payment Amount',
-                    'data' => [1000, 1500, 1200, 1800],
-                    'backgroundColor' => 'rgba(54, 162, 235, 0.2)',
-                    'borderColor' => 'rgba(54, 162, 235, 1)',
-                ],
-            ],
-        ];
-    }
-
-    private function prepareAgingChartData(array $data): array
-    {
-        return [
-            'labels' => array_keys($data['aging_data']),
-            'datasets' => [[
-                'label' => 'Total Outstanding Balance',
-                'data' => collect($data['aging_data'])->map(function ($bucket) {
-                    return collect($bucket)->sum('outstanding_balance');
-                })->toArray(),
-                'backgroundColor' => 'rgba(255, 99, 132, 0.2)',
-                'borderColor' => 'rgba(255, 99, 132, 1)',
-            ]],
-        ];
-    }
-
-    private function prepareCourseRevenueChartData(array $data): array
-    {
-        return [
-            'labels' => collect($data['course_data'])->pluck('course')->toArray(),
-            'datasets' => [
-                [
-                    'label' => 'Total Revenue',
-                    'data' => collect($data['course_data'])->pluck('total_revenue')->toArray(),
-                    'backgroundColor' => 'rgba(75, 192, 192, 0.2)',
-                    'borderColor' => 'rgba(75, 192, 192, 1)',
-                ],
-                [
-                    'label' => 'Student Count',
-                    'data' => collect($data['course_data'])->pluck('student_count')->toArray(),
-                    'backgroundColor' => 'rgba(54, 162, 235, 0.2)',
-                    'borderColor' => 'rgba(54, 162, 235, 1)',
-                ],
-            ],
-        ];
-    }
-
-    // Helper methods for dashboard data
+    /**
+     * Helper: Get available reports
+     */
     private function getAvailableReports(): array
     {
         return [
-            'revenue' => [
+            [
+                'id' => 'revenue',
                 'name' => 'Revenue Report',
-                'description' => 'Daily, weekly, monthly, and yearly revenue analysis',
-                'icon' => 'dollar-sign',
-                'color' => 'green',
+                'description' => 'Analyze payment revenue over time periods',
+                'icon' => 'CurrencyDollar',
+                'filters' => ['period', 'gateway', 'date_range'],
             ],
-            'payment_methods' => [
-                'name' => 'Payment Methods Breakdown',
-                'description' => 'Analysis of payment method usage and performance',
-                'icon' => 'credit-card',
-                'color' => 'blue',
+            [
+                'id' => 'payment_methods',
+                'name' => 'Payment Methods Analysis',
+                'description' => 'Breakdown of payment methods usage',
+                'icon' => 'CreditCard',
+                'filters' => ['date_range'],
             ],
-            'student_patterns' => [
+            [
+                'id' => 'student_patterns',
                 'name' => 'Student Payment Patterns',
-                'description' => 'Student payment behavior and trends analysis',
-                'icon' => 'users',
-                'color' => 'purple',
+                'description' => 'Analyze student payment behavior patterns',
+                'icon' => 'ChartBar',
+                'filters' => ['date_range', 'analysis_type'],
             ],
-            'aging' => [
+            [
+                'id' => 'aging',
                 'name' => 'Aging Report',
-                'description' => 'Outstanding balance aging analysis',
-                'icon' => 'clock',
-                'color' => 'orange',
+                'description' => 'Analyze overdue payments by age buckets',
+                'icon' => 'Clock',
+                'filters' => ['as_of_date', 'aging_buckets', 'include_graduated'],
             ],
-            'course_revenue' => [
+            [
+                'id' => 'course_revenue',
                 'name' => 'Course Revenue Analysis',
-                'description' => 'Revenue analysis by course and program',
-                'icon' => 'graduation-cap',
-                'color' => 'indigo',
+                'description' => 'Revenue analysis by course and year level',
+                'icon' => 'AcademicCap',
+                'filters' => ['date_range', 'group_by'],
             ],
         ];
     }
 
+    /**
+     * Helper: Get recent exports
+     */
     private function getRecentExports(): array
     {
-        // This would come from a database table tracking report exports
-        return [
-            [
-                'report_type' => 'Revenue',
-                'generated_by' => 'Admin User',
-                'generated_at' => now()->subMinutes(15)->format('M d, Y h:i A'),
-                'format' => 'PDF',
-                'file_size' => '2.4 MB',
-            ],
-            [
-                'report_type' => 'Aging Report',
-                'generated_by' => 'Accounting Staff',
-                'generated_at' => now()->subHours(2)->format('M d, Y h:i A'),
-                'format' => 'Excel',
-                'file_size' => '1.8 MB',
-            ],
-        ];
+        // This would typically query a database table for export history
+        // For now, return empty array
+        return [];
     }
 
+    /**
+     * Helper: Get system stats
+     */
     private function getSystemStats(): array
     {
         return [
-            'total_payments_today' => Payment::whereDate('paid_at', today())->count(),
-            'revenue_today' => Payment::whereDate('paid_at', today())->sum('amount'),
+            'total_students' => Student::count(),
             'active_students' => Student::where('status', 'active')->count(),
-            'pending_transactions' => Transaction::where('status', 'pending')->count(),
+            'total_revenue' => Payment::where('status', 'completed')->sum('amount'),
+            'pending_payments' => Payment::where('status', 'pending')->count(),
         ];
     }
 
-    private function getRevenueMetrics(string $period): array
+    /**
+     * Helper: Get payment methods breakdown
+     */
+    private function getPaymentMethodsBreakdown(): array
     {
-        $dateRange = match ($period) {
-            'day' => [now()->startOfDay(), now()->endOfDay()],
-            'week' => [now()->startOfWeek(), now()->endOfWeek()],
-            'month' => [now()->startOfMonth(), now()->endOfMonth()],
-            'year' => [now()->startOfYear(), now()->endOfYear()],
-        };
-
-        $revenue = Payment::where('status', 'completed')
-            ->whereBetween('paid_at', $dateRange)
-            ->sum('amount');
-
-        return [
-            'current' => $revenue,
-            'previous' => $revenue * 0.85, // Example: previous period was 85% of current
-            'growth' => 15.5,
-        ];
+        return Payment::where('status', 'completed')
+            ->where('created_at', '>=', now()->subDays(30))
+            ->join('payment_gateway_details', 'payments.id', '=', 'payment_gateway_details.payment_id')
+            ->selectRaw('payment_gateway_details.gateway, COUNT(*) as count, SUM(payments.amount) as total')
+            ->groupBy('payment_gateway_details.gateway')
+            ->get()
+            ->toArray();
     }
 
-    private function getPaymentStats(string $period): array
+    /**
+     * Helper: Analyze payment timeliness
+     */
+    private function analyzePaymentTimeliness(string $startDate, string $endDate): array
     {
-        $dateRange = match ($period) {
-            'day' => [now()->startOfDay(), now()->endOfDay()],
-            'week' => [now()->startOfWeek(), now()->endOfWeek()],
-            'month' => [now()->startOfMonth(), now()->endOfMonth()],
-            'year' => [now()->startOfYear(), now()->endOfYear()],
-        };
-
-        $completed = Payment::where('status', 'completed')
-            ->whereBetween('paid_at', $dateRange)
-            ->count();
-
-        $failed = Payment::where('status', 'failed')
-            ->whereBetween('created_at', $dateRange)
-            ->count();
-
-        $total = $completed + $failed;
-
-        return [
-            'completed' => $completed,
-            'failed' => $failed,
-            'success_rate' => $total > 0 ? ($completed / $total) * 100 : 0,
-        ];
+        // Implementation for payment timeliness analysis
+        return [];
     }
 
-    private function getStudentStats(string $period): array
+    /**
+     * Helper: Analyze payment frequency
+     */
+    private function analyzePaymentFrequency(string $startDate, string $endDate): array
     {
-        return [
-            'active_students' => Student::where('status', 'active')->count(),
-            'new_registrations' => Student::whereBetween('created_at', [now()->startOfMonth(), now()])->count(),
-            'students_with_balance' => Student::whereHas('studentFeeItems', function ($query) {
-                $query->where('balance', '>', 0);
-            })->count(),
-        ];
+        // Implementation for payment frequency analysis
+        return [];
     }
 
-    private function getTrendingData(string $period): array
+    /**
+     * Helper: Analyze payment amounts
+     */
+    private function analyzePaymentAmounts(string $startDate, string $endDate): array
     {
-        // Generate sample trending data for the last 7 days
-        $labels = [];
-        $revenueData = [];
-        $transactionData = [];
+        // Implementation for payment amount analysis
+        return [];
+    }
 
-        for ($i = 6; $i >= 0; $i--) {
-            $date = now()->subDays($i);
-            $labels[] = $date->format('M d');
+    /**
+     * Helper: Analyze delinquency
+     */
+    private function analyzeDelinquency(string $startDate, string $endDate): array
+    {
+        // Implementation for delinquency analysis
+        return [];
+    }
 
-            $revenueData[] = Payment::whereDate('paid_at', $date)
-                ->where('status', 'completed')
-                ->sum('amount');
-
-            $transactionData[] = Payment::whereDate('paid_at', $date)
-                ->where('status', 'completed')
-                ->count();
+    /**
+     * Helper: Determine age bucket
+     */
+    private function determineAgeBucket(int $daysOutstanding, array $buckets): string
+    {
+        sort($buckets);
+        
+        foreach ($buckets as $bucket) {
+            if ($daysOutstanding <= $bucket) {
+                return "1-{$bucket} days";
+            }
         }
+        
+        return $buckets[count($buckets) - 1] . "+ days";
+    }
 
+    /**
+     * Helper: Generate bucket summary
+     */
+    private function generateBucketSummary(array $agingData, array $buckets): array
+    {
+        $summary = [];
+        
+        foreach ($buckets as $bucket) {
+            $summary["1-{$bucket}_days"] = [
+                'count' => 0,
+                'amount' => 0,
+            ];
+        }
+        
+        foreach ($agingData as $data) {
+            $bucketKey = $data['age_bucket'];
+            if (isset($summary[$bucketKey])) {
+                $summary[$bucketKey]['count']++;
+                $summary[$bucketKey]['amount'] += $data['outstanding_balance'];
+            }
+        }
+        
+        return $summary;
+    }
+
+    /**
+     * Helper: Prepare revenue chart data
+     */
+    private function prepareRevenueChartData(array $data): array
+    {
         return [
-            'labels' => $labels,
-            'revenue' => $revenueData,
-            'transactions' => $transactionData,
+            'labels' => $data['data']->pluck('period'),
+            'datasets' => [
+                [
+                    'label' => 'Revenue',
+                    'data' => $data['data']->pluck('total_amount'),
+                    'backgroundColor' => 'rgba(59, 130, 246, 0.5)',
+                    'borderColor' => 'rgb(59, 130, 246)',
+                ],
+                [
+                    'label' => 'Transactions',
+                    'data' => $data['data']->pluck('transaction_count'),
+                    'backgroundColor' => 'rgba(16, 185, 129, 0.5)',
+                    'borderColor' => 'rgb(16, 185, 129)',
+                    'yAxisID' => 'y1',
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Helper: Prepare payment methods chart data
+     */
+    private function preparePaymentMethodsChartData(array $data): array
+    {
+        return [
+            'labels' => $data['methods']->pluck('method'),
+            'datasets' => [
+                [
+                    'label' => 'Amount',
+                    'data' => $data['methods']->pluck('amount'),
+                    'backgroundColor' => [
+                        'rgba(255, 99, 132, 0.8)',
+                        'rgba(54, 162, 235, 0.8)',
+                        'rgba(153, 102, 255, 0.8)',
+                        'rgba(255, 159, 64, 0.8)',
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Helper: Prepare student patterns chart data
+     */
+    private function prepareStudentPatternsChartData(array $data, string $analysisType): array
+    {
+        // Implementation based on analysis type
+        return [];
+    }
+
+    /**
+     * Helper: Prepare aging chart data
+     */
+    private function prepareAgingChartData(array $data): array
+    {
+        $bucketLabels = array_keys($data['bucket_summary']);
+        $bucketCounts = array_map(fn($bucket) => $bucket['count'], $data['bucket_summary']);
+        
+        return [
+            'labels' => $bucketLabels,
+            'datasets' => [
+                [
+                    'label' => 'Number of Students',
+                    'data' => $bucketCounts,
+                    'backgroundColor' => 'rgba(239, 68, 68, 0.8)',
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Helper: Prepare course revenue chart data
+     */
+    private function prepareCourseRevenueChartData(array $data): array
+    {
+        return [
+            'labels' => $data['data']->pluck('group_key'),
+            'datasets' => [
+                [
+                    'label' => 'Revenue',
+                    'data' => $data['data']->pluck('total_amount'),
+                    'backgroundColor' => 'rgba(34, 197, 94, 0.8)',
+                ],
+            ],
         ];
     }
 }

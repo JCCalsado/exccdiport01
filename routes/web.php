@@ -4,7 +4,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\StudentDashboardController;
 use App\Http\Controllers\StudentAccountController;
-use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PaymentController as StudentPaymentController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\StudentFeeController;
 use App\Http\Controllers\TransactionController;
@@ -14,6 +14,7 @@ use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\ReportController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -29,27 +30,25 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::middleware(['auth', 'verified', 'role:student'])->prefix('student')->group(function () {
     Route::get('/dashboard', [StudentDashboardController::class, 'index'])->name('student.dashboard');
     Route::get('/account', [StudentAccountController::class, 'index'])->name('student.account');
-    Route::get('/payment', [PaymentController::class, 'create'])->name('payment.create');
-    Route::get('/my-profile', [StudentController::class, 'studentProfile'])->name('my-profile');
-    Route::post('/payment/initiate', [PaymentController::class, 'initiate'])->name('payment.initiate');
-    
-    Route::get('/payment/success/{paymentId}', [PaymentController::class, 'success'])->name('payment.success');
-    Route::get('/payment/cancelled/{paymentId}', [PaymentController::class, 'cancelled'])->name('payment.cancelled');
-    Route::get('/payment/failed/{paymentId}', [PaymentController::class, 'failed'])->name('payment.failed');
-    Route::get('/payment/status/{paymentId}', [PaymentController::class, 'status'])->name('payment.status');
-    Route::get('/payment/receipt/{paymentId}', [PaymentController::class, 'receipt'])->name('payment.receipt');
-    Route::get('/payment/receipt/{paymentId}/download', [PaymentController::class, 'downloadReceipt'])->name('payment.receipt.download');
-    Route::get('/payment/check-status/{paymentId}', [PaymentController::class, 'checkStatus'])->name('payment.check-status');
-    Route::get('/payment/methods', [PaymentController::class, 'getPaymentMethods'])->name('payment.methods');
-    Route::get('/payment/history', [PaymentController::class, 'history'])->name('payment.history');
+    Route::get('/payment', [StudentPaymentController::class, 'create'])->name('payment.create');
+    Route::post('/payment/initiate', [StudentPaymentController::class, 'initiate'])->name('payment.initiate');
+    Route::get('/payment/success/{paymentId}', [StudentPaymentController::class, 'success'])->name('payment.success');
+    Route::get('/payment/cancelled/{paymentId}', [StudentPaymentController::class, 'cancelled'])->name('payment.cancelled');
+    Route::get('/payment/failed/{paymentId}', [StudentPaymentController::class, 'failed'])->name('payment.failed');
+    Route::get('/payment/status/{paymentId}', [StudentPaymentController::class, 'status'])->name('payment.status');
+    Route::get('/payment/receipt/{paymentId}', [StudentPaymentController::class, 'receipt'])->name('payment.receipt');
+    Route::get('/payment/receipt/{paymentId}/download', [StudentPaymentController::class, 'downloadReceipt'])->name('payment.receipt.download');
+    Route::get('/payment/check-status/{paymentId}', [StudentPaymentController::class, 'checkStatus'])->name('payment.check-status');
+    Route::get('/payment/methods', [StudentPaymentController::class, 'getPaymentMethods'])->name('payment.methods');
+    Route::get('/payment/history', [StudentPaymentController::class, 'history'])->name('payment.history');
     Route::get('/my-profile', [StudentController::class, 'studentProfile'])->name('my-profile');
 });
 
 // Payment webhook routes (no auth middleware)
 Route::prefix('payments/webhook')->group(function () {
-    Route::post('/gcash', [PaymentController::class, 'handleGCashWebhook'])->name('payments.webhook.gcash');
-    Route::post('/paypal', [PaymentController::class, 'handlePayPalWebhook'])->name('payments.webhook.paypal');
-    Route::post('/stripe', [PaymentController::class, 'handleStripeWebhook'])->name('payments.webhook.stripe');
+    Route::post('/gcash', [StudentPaymentController::class, 'handleGCashWebhook'])->name('payments.webhook.gcash');
+    Route::post('/paypal', [StudentPaymentController::class, 'handlePayPalWebhook'])->name('payments.webhook.paypal');
+    Route::post('/stripe', [StudentPaymentController::class, 'handleStripeWebhook'])->name('payments.webhook.stripe');
 });
 
 // Student Archive routes (for admin/accounting)
@@ -134,16 +133,22 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function
 // Reports routes
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('reports')->group(function () {
     Route::get('/', [ReportController::class, 'index'])->name('reports.index');
+
     // Revenue reports
     Route::post('/revenue', [ReportController::class, 'revenue'])->name('reports.revenue');
+
     // Payment methods analysis
     Route::post('/payment-methods', [ReportController::class, 'paymentMethods'])->name('reports.payment-methods');
+
     // Student payment patterns
     Route::post('/student-patterns', [ReportController::class, 'studentPatterns'])->name('reports.student-patterns');
+
     // Aging report
     Route::post('/aging', [ReportController::class, 'agingReport'])->name('reports.aging');
+
     // Course revenue analysis
     Route::post('/course-revenue', [ReportController::class, 'courseRevenue'])->name('reports.course-revenue');
+
     // API for dashboard data
     Route::get('/dashboard-data', [ReportController::class, 'dashboardData'])->name('reports.dashboard-data');
 });

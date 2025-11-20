@@ -6,8 +6,13 @@ use App\Events\PaymentStatusChanged;
 use App\Events\PaymentCompleted;
 use App\Events\PaymentFailed;
 use App\Services\NotificationService;
+use App\Enums\UserRoleEnum;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use App\Mail\PaymentCompleted as PaymentCompletedMail;
+use App\Mail\PaymentFailed as PaymentFailedMail;
+use App\Mail\AdminPaymentCompleted as AdminPaymentCompletedMail;
+use App\Mail\AdminPaymentFailed as AdminPaymentFailedMail;
 
 class SendPaymentNotification
 {
@@ -54,9 +59,9 @@ class SendPaymentNotification
         }
 
         // Send email notification
-        if (config('payment.notifications.payment_confirmation', true)) {
+        if (config('app.notifications.payment_confirmation', true)) {
             try {
-                Mail::to($user->email)->send(new \App\Mail\PaymentCompleted($payment));
+                Mail::to($user->email)->send(new PaymentCompletedMail($payment));
                 Log::info('Payment confirmation email sent', [
                     'payment_id' => $payment->id,
                     'email' => $user->email,
@@ -75,18 +80,18 @@ class SendPaymentNotification
             'user_id' => $user->id,
             'type' => 'payment_completed',
             'title' => 'Payment Completed',
-            'message' => "Your payment of ₱{$payment->amount} has been successfully processed. Receipt #: {$payment->receipt_number}",
+            'message' => "Your payment of ₱{$payment->amount} has been successfully processed. Receipt #: {$payment->reference_number}",
             'data' => [
                 'payment_id' => $payment->id,
                 'amount' => $payment->amount,
-                'receipt_number' => $payment->receipt_number,
+                'reference_number' => $payment->reference_number,
                 'payment_method' => $payment->payment_method,
             ],
         ]);
 
         // Send SMS notification if configured
-        if (config('payment.notifications.sms_confirmation', false) && $student->contact_number) {
-            $this->sendSmsNotification($student->contact_number, $this->getPaymentCompletedSmsMessage($payment));
+        if (config('app.notifications.sms_confirmation', false) && $student->phone) {
+            $this->sendSmsNotification($student->phone, $this->getPaymentCompletedSmsMessage($payment));
         }
 
         // Notify administrators
@@ -110,9 +115,9 @@ class SendPaymentNotification
         }
 
         // Send email notification
-        if (config('payment.notifications.payment_failure', true)) {
+        if (config('app.notifications.payment_failure', true)) {
             try {
-                Mail::to($user->email)->send(new \App\Mail\PaymentFailed($payment, $reason));
+                Mail::to($user->email)->send(new PaymentFailedMail($payment, $reason));
                 Log::info('Payment failure email sent', [
                     'payment_id' => $payment->id,
                     'email' => $user->email,
@@ -190,20 +195,20 @@ class SendPaymentNotification
      */
     private function notifyAdministrators($payment, string $eventType, string $reason = ''): void
     {
-        if (!config('payment.notifications.admin_notifications', true)) {
+        if (!config('app.notifications.admin_notifications', true)) {
             return;
         }
 
-        $adminEmails = config('payment.notifications.admin_emails', []);
+        $adminEmails = config('app.notifications.admin_emails', []);
 
         foreach ($adminEmails as $email) {
             try {
                 switch ($eventType) {
                     case 'payment_completed':
-                        Mail::to($email)->send(new \App\Mail\AdminPaymentCompleted($payment));
+                        Mail::to($email)->send(new AdminPaymentCompletedMail($payment));
                         break;
                     case 'payment_failed':
-                        Mail::to($email)->send(new \App\Mail\AdminPaymentFailed($payment, $reason));
+                        Mail::to($email)->send(new AdminPaymentFailedMail($payment, $reason));
                         break;
                 }
             } catch (\Exception $e) {
@@ -217,7 +222,7 @@ class SendPaymentNotification
         }
 
         // Create admin notifications
-        $adminUsers = \App\Models\User::where('role', 'admin')->orWhere('role', 'accounting')->get();
+        $adminUsers = \App\Models\User::whereIn('role', [UserRoleEnum::ADMIN, UserRoleEnum::ACCOUNTING])->get();
 
         foreach ($adminUsers as $admin) {
             $this->notificationService->createNotification([
@@ -261,7 +266,7 @@ class SendPaymentNotification
      */
     private function getPaymentCompletedSmsMessage($payment): string
     {
-        return "Payment of ₱{$payment->amount} completed successfully. Receipt #: {$payment->receipt_number}. Thank you!";
+        return "Payment of ₱{$payment->amount} completed successfully. Receipt #: {$payment->reference_number}. Thank you!";
     }
 
     /**

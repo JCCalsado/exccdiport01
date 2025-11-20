@@ -41,7 +41,7 @@ class User extends Authenticatable
         'remember_token',
     ];
 
-    // Set the appends property to include virtual attributes
+    // Set appends property to include virtual attributes
     protected $appends = ['name'];
 
     protected function casts(): array
@@ -71,8 +71,8 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the user's full name.
-     * This is the main accessor that will be serialized in API responses.
+     * Get user's full name.
+     * This is main accessor that will be serialized in API responses.
      */
     public function getNameAttribute(): string
     {
@@ -81,7 +81,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the user's full name (alternative format).
+     * Get user's full name (alternative format).
      * Use this for display purposes where you want "Last, First MI."
      */
     public function getFullNameAttribute(): string
@@ -104,5 +104,45 @@ class User extends Authenticatable
             'status' => 'required|in:active,graduated,dropped',
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ];
+    }
+
+    /**
+     * Check if user is admin
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === UserRoleEnum::ADMIN;
+    }
+
+    /**
+     * Check if user is accounting staff
+     */
+    public function isAccounting(): bool
+    {
+        return $this->role === UserRoleEnum::ACCOUNTING;
+    }
+
+    /**
+     * Check if user is student
+     */
+    public function isStudent(): bool
+    {
+        return $this->role === UserRoleEnum::STUDENT;
+    }
+
+    /**
+     * Check if user has admin or accounting role
+     */
+    public function isStaff(): bool
+    {
+        return $this->isAdmin() || $this->isAccounting();
+    }
+
+    /**
+     * Get user role label
+     */
+    public function getRoleLabelAttribute(): string
+    {
+        return $this->role->label() ?? 'Unknown';
     }
 }
