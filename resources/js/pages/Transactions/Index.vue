@@ -33,12 +33,16 @@ interface Props {
       role: string
     }
   }
-  transactionsByTerm: TransactionsByTerm
-  account: Account
-  currentTerm: string
+  transactionsByTerm?: TransactionsByTerm
+  account?: Account
+  currentTerm?: string
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  transactionsByTerm: () => ({}),
+  account: () => ({ id: 0, user_id: 0, balance: 0 }),
+  currentTerm: () => ''
+})
 
 const { formatCurrency, formatDate } = useFormatters()
 
