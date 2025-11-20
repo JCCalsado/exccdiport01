@@ -119,17 +119,17 @@ const paymentPercentage = computed(() => {
 
 // Computed: Grouped fees by category
 const feesByCategory = computed(() => {
-  const grouped = props.fees.reduce((acc, fee) => {
+  const grouped = (props.fees || []).reduce((acc, fee) => {
     const category = fee.category || 'Other'
     if (!acc[category]) acc[category] = []
     acc[category].push(fee)
     return acc
   }, {} as Record<string, Fee[]>)
-  
+
   return Object.entries(grouped).map(([category, fees]) => ({
     category,
     fees,
-    total: fees.reduce((sum, f) => sum + Number(f.amount), 0)
+    total: fees.reduce((sum, f) => sum + Number(f.amount || 0), 0)
   }))
 })
 
