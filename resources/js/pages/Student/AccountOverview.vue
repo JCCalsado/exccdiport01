@@ -39,15 +39,18 @@ interface Fee {
 }
 
 interface Props {
-  account: Account
-  transactions: Transaction[]
-  fees: Fee[]
+  account?: Account
+  transactions?: Transaction[]
+  fees?: Fee[]
   currentTerm?: { year: number; semester: string }
   tab?: 'fees' | 'history' | 'payment'
   latestAssessment?: Assessment
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  account: () => ({ id: 0, balance: 0, user_id: 0 }),
+  transactions: () => [],
+  fees: () => [],
   currentTerm: () => ({
     year: new Date().getFullYear(),
     semester: '1st Sem'
