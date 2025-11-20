@@ -7,14 +7,17 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Inertia\Inertia;
-use PDF;
 use App\Services\PaymentGatewayService;
 use App\Services\FraudDetectionService;
 use App\Models\Payment;
 use App\Models\Student;
 use App\Models\StudentFeeItem;
 use App\Events\PaymentStatusChanged;
+use App\Events\PaymentCompleted;
+use App\Events\PaymentFailed;
 
 class PaymentController extends Controller
 {
@@ -47,8 +50,8 @@ class PaymentController extends Controller
         // Get outstanding fee items
         $outstandingFees = StudentFeeItem::where('student_id', $student->id)
             ->where('balance', '>', 0)
-            ->with(['fee', 'feeCategory'])
-            ->orderBy('created_at')
+            ->with(['fee', 'fee.feeCategory'])
+            ->orderBy('due_date')
             ->get();
 
         // Get available payment methods
@@ -139,7 +142,7 @@ class PaymentController extends Controller
                 }
 
                 $paymentData['fee_items'] = $feeItems->pluck('id')->toArray();
-                $paymentData['description'] = 'Payment for: ' . $feeItems->pluck('fee.name')->implode(', ');
+                $paymentData['description'] = 'Payment for: ' . $feeItems->map(fn($item) => $item->fee->name ?? 'Fee')->implode(', ');
             }
 
             // Calculate gateway fees
@@ -157,7 +160,7 @@ class PaymentController extends Controller
             // Fire payment initiated event
             if (isset($result['payment_id'])) {
                 $payment = Payment::find($result['payment_id']);
-                event(new PaymentStatusChanged($payment, 'initiated', $payment->status));
+                event(new PaymentStatusChanged($payment, 'pending', 'initiated'));
             }
 
             return response()->json($result);
@@ -201,6 +204,10 @@ class PaymentController extends Controller
         try {
             $gatewayDetail = $payment->latestGatewayDetail;
 
+            if (!$gatewayDetail) {
+                throw new \Exception('No gateway details found for payment');
+            }
+
             switch ($gatewayDetail->gateway) {
                 case 'gcash':
                     $this->completeGCashPayment($payment, $request);
@@ -217,14 +224,16 @@ class PaymentController extends Controller
 
             // Update payment status
             $payment->status = Payment::STATUS_COMPLETED;
-            $payment->completed_at = now();
+            $payment->paid_at = now();
+            $payment->receipt_number = 'RCP-' . date('Ymd') . '-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT);
             $payment->save();
 
             // Apply payment to fee items
             $this->applyPaymentToFeeItems($payment);
 
-            // Fire completion event
+            // Fire completion events
             event(new PaymentStatusChanged($payment, 'completed', $payment->status));
+            event(new PaymentCompleted($payment));
 
             return redirect()->route('payment.receipt', $paymentId)
                 ->with('success', 'Payment completed successfully!');
@@ -284,6 +293,7 @@ class PaymentController extends Controller
 
         // Fire failure event
         event(new PaymentStatusChanged($payment, 'failed', $payment->status));
+        event(new PaymentFailed($payment, 'Payment processing failed'));
 
         return redirect()->route('payment.create')
             ->with('error', 'Payment failed. Please try again or contact support.');
@@ -347,7 +357,7 @@ class PaymentController extends Controller
             'payment' => $payment->load(['student.user', 'latestGatewayDetail']),
         ]);
 
-        return $pdf->download("payment-receipt-{$payment->reference_number}.pdf");
+        return $pdf->download("payment-receipt-{$payment->receipt_number}.pdf");
     }
 
     /**
@@ -452,7 +462,8 @@ class PaymentController extends Controller
             switch ($event) {
                 case 'payment.completed':
                     $payment->status = Payment::STATUS_COMPLETED;
-                    $payment->completed_at = now();
+                    $payment->paid_at = now();
+                    $payment->receipt_number = 'RCP-' . date('Ymd') . '-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT);
                     break;
                 case 'payment.failed':
                     $payment->status = Payment::STATUS_FAILED;
@@ -470,6 +481,7 @@ class PaymentController extends Controller
             // Apply payment if completed
             if ($payment->status === Payment::STATUS_COMPLETED) {
                 $this->applyPaymentToFeeItems($payment);
+                event(new PaymentCompleted($payment));
             }
 
             // Fire status change event
@@ -515,13 +527,14 @@ class PaymentController extends Controller
             switch ($event) {
                 case 'PAYMENT.SALE.COMPLETED':
                     $payment->status = Payment::STATUS_COMPLETED;
-                    $payment->completed_at = now();
+                    $payment->paid_at = now();
+                    $payment->receipt_number = 'RCP-' . date('Ymd') . '-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT);
                     break;
                 case 'PAYMENT.SALE.DENIED':
                     $payment->status = Payment::STATUS_FAILED;
                     break;
                 case 'PAYMENT.SALE.REVERSED':
-                    $payment->status = Payment::STATUS_FAILED; // Changed from REFUNDED to avoid missing constant
+                    $payment->status = Payment::STATUS_CANCELLED;
                     break;
                 default:
                     Log::warning('Unknown PayPal webhook event', ['event' => $event]);
@@ -533,6 +546,7 @@ class PaymentController extends Controller
             // Apply payment if completed
             if ($payment->status === Payment::STATUS_COMPLETED) {
                 $this->applyPaymentToFeeItems($payment);
+                event(new PaymentCompleted($payment));
             }
 
             // Fire status change event
@@ -578,13 +592,14 @@ class PaymentController extends Controller
             switch ($event) {
                 case 'payment_intent.succeeded':
                     $payment->status = Payment::STATUS_COMPLETED;
-                    $payment->completed_at = now();
+                    $payment->paid_at = now();
+                    $payment->receipt_number = 'RCP-' . date('Ymd') . '-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT);
                     break;
                 case 'payment_intent.payment_failed':
                     $payment->status = Payment::STATUS_FAILED;
                     break;
                 case 'charge.refunded':
-                    $payment->status = Payment::STATUS_FAILED; // Changed from REFUNDED to avoid missing constant
+                    $payment->status = Payment::STATUS_CANCELLED;
                     break;
                 default:
                     Log::warning('Unknown Stripe webhook event', ['event' => $event]);
@@ -596,6 +611,7 @@ class PaymentController extends Controller
             // Apply payment if completed
             if ($payment->status === Payment::STATUS_COMPLETED) {
                 $this->applyPaymentToFeeItems($payment);
+                event(new PaymentCompleted($payment));
             }
 
             // Fire status change event
@@ -630,6 +646,7 @@ class PaymentController extends Controller
             'gateway' => 'gcash',
             'gateway_transaction_id' => $verification['transaction_id'] ?? null,
             'gateway_response' => json_encode($verification),
+            'gateway_status' => 'completed',
             'status' => 'completed',
         ]);
     }
@@ -651,6 +668,7 @@ class PaymentController extends Controller
             'gateway' => 'paypal',
             'gateway_transaction_id' => $verification['transaction_id'] ?? null,
             'gateway_response' => json_encode($verification),
+            'gateway_status' => 'completed',
             'status' => 'completed',
         ]);
     }
@@ -672,6 +690,7 @@ class PaymentController extends Controller
             'gateway' => 'stripe',
             'gateway_transaction_id' => $verification['transaction_id'] ?? null,
             'gateway_response' => json_encode($verification),
+            'gateway_status' => 'completed',
             'status' => 'completed',
         ]);
     }
@@ -692,22 +711,16 @@ class PaymentController extends Controller
                     if ($remainingAmount <= 0) break;
                     
                     $amountToApply = min($feeItem->balance, $remainingAmount);
-                    $feeItem->balance = max(0, $feeItem->balance - $amountToApply);
-                    $feeItem->amount_paid = $feeItem->amount_paid + $amountToApply;
-                    
-                    if ($feeItem->balance === 0) {
-                        $feeItem->status = 'paid';
-                    } elseif ($feeItem->amount_paid > 0 && $feeItem->balance > 0) {
-                        $feeItem->status = 'partial';
-                    }
-                    
+                    $feeItem->recordPayment($amountToApply);
                     $feeItem->save();
+                    
                     $remainingAmount -= $amountToApply;
                 }
             } else {
                 // Apply to oldest unpaid fee items
                 $feeItems = StudentFeeItem::where('student_id', $payment->student_id)
                     ->where('balance', '>', 0)
+                    ->orderBy('due_date')
                     ->orderBy('created_at')
                     ->get();
                 
@@ -715,24 +728,17 @@ class PaymentController extends Controller
                     if ($remainingAmount <= 0) break;
                     
                     $amountToApply = min($feeItem->balance, $remainingAmount);
-                    $feeItem->balance = max(0, $feeItem->balance - $amountToApply);
-                    $feeItem->amount_paid = $feeItem->amount_paid + $amountToApply;
-                    
-                    if ($feeItem->balance === 0) {
-                        $feeItem->status = 'paid';
-                    } elseif ($feeItem->amount_paid > 0 && $feeItem->balance > 0) {
-                        $feeItem->status = 'partial';
-                    }
-                    
+                    $feeItem->recordPayment($amountToApply);
                     $feeItem->save();
+                    
                     $remainingAmount -= $amountToApply;
                 }
             }
 
             // Update student's total balance
-            $payment->student->update([
-                'total_balance' => $payment->student->feeItems()->sum('balance'),
-            ]);
+            $student = $payment->student;
+            $totalBalance = StudentFeeItem::where('student_id', $student->id)->sum('balance');
+            $student->update(['total_balance' => $totalBalance]);
         });
     }
 }

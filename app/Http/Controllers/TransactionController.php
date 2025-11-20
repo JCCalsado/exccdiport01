@@ -22,22 +22,20 @@ class TransactionController extends Controller
         // Admins & accounting see all, students see their own
         if ($user->isStaff()) {
             $transactions = Transaction::with('user')
-                ->orderByDesc('year')
-                ->orderBy('semester')
+                ->orderByDesc('created_at')
                 ->get()
-                ->groupBy(fn($txn) => "{$txn->year} {$txn->semester}");
+                ->groupBy(fn($txn) => $txn->created_at->format('Y-m'));
         } else {
             $transactions = $user->transactions()
                 ->with('user')
-                ->orderByDesc('year')
-                ->orderBy('semester')
+                ->orderByDesc('created_at')
                 ->get()
-                ->groupBy(fn($txn) => "{$txn->year} {$txn->semester}");
+                ->groupBy(fn($txn) => $txn->created_at->format('Y-m'));
         }
 
         return Inertia::render('Transactions/Index', [
             'auth' => ['user' => $user],
-            'transactionsByTerm' => $transactions,
+            'transactionsByDate' => $transactions,
             'account' => $user->account,
             'currentTerm' => $this->getCurrentTerm(),
         ]);
@@ -113,14 +111,14 @@ class TransactionController extends Controller
 
         // Only staff can download all, students see their own
         if ($user->isStaff()) {
-            $transactions = Transaction::where('year', $year)
-                ->where('semester', $semester)
+            $transactions = Transaction::whereYear($year)
+                ->whereSemester($semester)
                 ->with('user')
                 ->get();
         } else {
             $transactions = $user->transactions()
-                ->where('year', $year)
-                ->where('semester', $semester)
+                ->whereYear($year)
+                ->whereSemester($semester)
                 ->get();
         }
 
@@ -190,17 +188,9 @@ class TransactionController extends Controller
                     $amountToPay = min($feeItem->balance, $remainingAmount);
 
                     // Update fee item
-                    $feeItem->balance = max(0, $feeItem->balance - $amountToPay);
-                    $feeItem->amount_paid = $feeItem->amount_paid + $amountToPay;
-                    
-                    if ($feeItem->balance === 0) {
-                        $feeItem->status = 'paid';
-                    } elseif ($feeItem->amount_paid > 0 && $feeItem->balance > 0) {
-                        $feeItem->status = 'partial';
-                    }
-                    
+                    $feeItem->recordPayment($amountToPay);
                     $feeItem->save();
-
+                    
                     // Create payment record
                     $payment = Payment::create([
                         'student_id' => $user->student->id,
@@ -208,7 +198,9 @@ class TransactionController extends Controller
                         'reference_number' => 'PAY-' . Str::upper(Str::random(8)),
                         'amount' => $amountToPay,
                         'payment_method' => $validated['payment_method'],
-                        'status' => 'pending',
+                        'status' => Payment::STATUS_COMPLETED,
+                        'paid_at' => now(),
+                        'receipt_number' => 'RCP-' . date('Ymd') . '-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT),
                         'description' => $validated['description'],
                     ]);
 
@@ -222,6 +214,7 @@ class TransactionController extends Controller
 
                 $feeItems = StudentFeeItem::where('student_id', $user->student->id)
                     ->unpaid()
+                    ->orderBy('due_date')
                     ->orderBy('created_at')
                     ->get();
 
@@ -233,17 +226,9 @@ class TransactionController extends Controller
                     $amountToPay = min($feeItem->balance, $remainingAmount);
 
                     // Update fee item
-                    $feeItem->balance = max(0, $feeItem->balance - $amountToPay);
-                    $feeItem->amount_paid = $feeItem->amount_paid + $amountToPay;
-                    
-                    if ($feeItem->balance === 0) {
-                        $feeItem->status = 'paid';
-                    } elseif ($feeItem->amount_paid > 0 && $feeItem->balance > 0) {
-                        $feeItem->status = 'partial';
-                    }
-                    
+                    $feeItem->recordPayment($amountToPay);
                     $feeItem->save();
-
+                    
                     // Create payment record
                     $payment = Payment::create([
                         'student_id' => $user->student->id,
@@ -251,11 +236,13 @@ class TransactionController extends Controller
                         'reference_number' => 'PAY-' . Str::upper(Str::random(8)),
                         'amount' => $amountToPay,
                         'payment_method' => $validated['payment_method'],
-                        'status' => 'pending',
+                        'status' => Payment::STATUS_COMPLETED,
+                        'paid_at' => now(),
+                        'receipt_number' => 'RCP-' . date('Ymd') . '-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT),
                         'description' => $validated['description'],
                     ]);
 
-                    $remainingAmount -= $amountToPay;
+$remainingAmount -= $amountToPay;
                 }
             }
 
@@ -284,7 +271,7 @@ class TransactionController extends Controller
     protected function recalculateAccount($user): void
     {
         $charges = $user->transactions()->where('type', 'charge')->sum('amount');
-        $payments = $user->transactions()->where('type', 'payment')->where('status', 'paid')->sum('amount');
+        $payments = $user->transactions()->where('status', 'paid')->sum('amount');
         $balance = $charges - $payments;
 
         $account = $user->account ?? $user->account()->create();

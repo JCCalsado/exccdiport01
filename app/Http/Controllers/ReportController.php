@@ -247,10 +247,10 @@ class ReportController extends Controller
     {
         try {
             $data = [
-                'total_payments' => Payment::where('status', 'completed')->count(),
-                'total_revenue' => Payment::where('status', 'completed')->sum('amount'),
-                'pending_payments' => Payment::where('status', 'pending')->count(),
-                'failed_payments' => Payment::where('status', 'failed')->count(),
+                'total_payments' => Payment::where('status', Payment::STATUS_COMPLETED)->count(),
+                'total_revenue' => Payment::where('status', Payment::STATUS_COMPLETED)->sum('amount'),
+                'pending_payments' => Payment::where('status', Payment::STATUS_PENDING)->count(),
+                'failed_payments' => Payment::where('status', Payment::STATUS_FAILED)->count(),
                 'recent_payments' => Payment::with(['student.user'])
                     ->where('created_at', '>=', now()->subDays(7))
                     ->orderBy('created_at', 'desc')
@@ -281,7 +281,7 @@ class ReportController extends Controller
      */
     private function generateRevenueData(string $period, string $startDate, string $endDate, string $gateway): array
     {
-        $query = Payment::where('status', 'completed')
+        $query = Payment::where('status', Payment::STATUS_COMPLETED)
             ->whereBetween('created_at', [$startDate, $endDate]);
 
         if ($gateway !== 'all') {
@@ -313,16 +313,18 @@ class ReportController extends Controller
                 break;
         }
 
+        $results = $query->get();
+        
         return [
             'period' => $period,
             'start_date' => $startDate,
             'end_date' => $endDate,
             'gateway' => $gateway,
-            'data' => $query->get(),
+            'data' => $results,
             'summary' => [
-                'total_amount' => $query->sum('amount') ?? 0,
-                'total_transactions' => $query->count() ?? 0,
-                'average_amount' => $query->avg('amount') ?? 0,
+                'total_amount' => $results->sum('total_amount'),
+                'total_transactions' => $results->count(),
+                'average_amount' => $results->avg('total_amount') ?? 0,
             ],
         ];
     }
@@ -332,7 +334,7 @@ class ReportController extends Controller
      */
     private function generatePaymentMethodsData(string $startDate, string $endDate): array
     {
-        $payments = Payment::where('status', 'completed')
+        $payments = Payment::where('status', Payment::STATUS_COMPLETED)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->with('latestGatewayDetail')
             ->get();
@@ -340,11 +342,13 @@ class ReportController extends Controller
         $methods = $payments->groupBy(function ($payment) {
             return $payment->latestGatewayDetail->gateway ?? 'unknown';
         })->map(function ($payments, $method) {
+            $totalAmount = $payments->sum('amount');
+            
             return [
                 'method' => $method,
-                'amount' => $payments->sum('amount'),
+                'amount' => $totalAmount,
                 'count' => $payments->count(),
-                'percentage' => ($payments->sum('amount') / $payments->sum('amount')) * 100,
+                'percentage' => $totalAmount > 0 ? ($totalAmount / $payments->sum('amount')) * 100 : 0,
             ];
         })->values();
 
@@ -399,11 +403,13 @@ class ReportController extends Controller
      */
     private function generateAgingReportData(string $asOfDate, array $agingBuckets, bool $includeGraduated): array
     {
-        $students = Student::with(['user', 'feeItems']);
+        $studentsQuery = Student::with(['user', 'feeItems']);
 
         if (!$includeGraduated) {
-            $students->where('status', 'active');
+            $studentsQuery->where('status', 'active');
         }
+
+        $students = $studentsQuery->get();
 
         $agingData = [];
         $totalOutstanding = 0;
@@ -413,7 +419,7 @@ class ReportController extends Controller
 
             if ($outstandingBalance > 0) {
                 $lastPayment = $student->payments()
-                    ->where('status', 'completed')
+                    ->where('status', Payment::STATUS_COMPLETED)
                     ->orderBy('created_at', 'desc')
                     ->first();
 
@@ -458,7 +464,7 @@ class ReportController extends Controller
      */
     private function generateCourseRevenueData(string $startDate, string $endDate, string $groupBy): array
     {
-        $query = Payment::where('status', 'completed')
+        $query = Payment::where('status', Payment::STATUS_COMPLETED)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->with('student');
 
@@ -477,15 +483,17 @@ class ReportController extends Controller
                 break;
         }
 
+        $results = $query->get();
+
         return [
             'start_date' => $startDate,
             'end_date' => $endDate,
             'group_by' => $groupBy,
-            'data' => $query->get(),
+            'data' => $results,
             'summary' => [
-                'total_amount' => $query->sum('amount') ?? 0,
-                'total_transactions' => $query->count() ?? 0,
-                'unique_courses' => $query->distinct('group_key')->count('group_key') ?? 0,
+                'total_amount' => $results->sum('total_amount'),
+                'total_transactions' => $results->count(),
+                'unique_courses' => $results->unique('group_key')->count('group_key') ?? 0,
             ],
         ];
     }
@@ -552,8 +560,8 @@ class ReportController extends Controller
         return [
             'total_students' => Student::count(),
             'active_students' => Student::where('status', 'active')->count(),
-            'total_revenue' => Payment::where('status', 'completed')->sum('amount'),
-            'pending_payments' => Payment::where('status', 'pending')->count(),
+            'total_revenue' => Payment::where('status', Payment::STATUS_COMPLETED)->sum('amount'),
+            'pending_payments' => Payment::where('status', Payment::STATUS_PENDING)->count(),
         ];
     }
 
@@ -562,7 +570,7 @@ class ReportController extends Controller
      */
     private function getPaymentMethodsBreakdown(): array
     {
-        return Payment::where('status', 'completed')
+        return Payment::where('status', Payment::STATUS_COMPLETED)
             ->where('created_at', '>=', now()->subDays(30))
             ->join('payment_gateway_details', 'payments.id', '=', 'payment_gateway_details.payment_id')
             ->selectRaw('payment_gateway_details.gateway, COUNT(*) as count, SUM(payments.amount) as total')
@@ -620,7 +628,7 @@ class ReportController extends Controller
             }
         }
         
-        return $buckets[count($buckets) - 1] . "+ days";
+        return ($buckets[count($buckets) - 1]) . "+ days";
     }
 
     /**
@@ -631,7 +639,8 @@ class ReportController extends Controller
         $summary = [];
         
         foreach ($buckets as $bucket) {
-            $summary["1-{$bucket}_days"] = [
+            $bucketKey = "1-{$bucket}_days";
+            $summary[$bucketKey] = [
                 'count' => 0,
                 'amount' => 0,
             ];

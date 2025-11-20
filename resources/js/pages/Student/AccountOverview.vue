@@ -1,15 +1,4 @@
 <script setup lang="ts">
-/**
- * Student Account Overview (IMPROVED)
- * Location: resources/js/pages/Student/AccountOverview.vue
- * 
- * Key improvements:
- * - Uses reusable composables and components
- * - Better tab management with URL sync
- * - Improved payment form validation
- * - Better error handling
- * - Cleaner computed properties
- */
 
 import { ref, computed, watch, onMounted } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
@@ -39,15 +28,18 @@ interface Fee {
 }
 
 interface Props {
-  account: Account
-  transactions: Transaction[]
-  fees: Fee[]
+  account?: Account
+  transactions?: Transaction[]
+  fees?: Fee[]
   currentTerm?: { year: number; semester: string }
   tab?: 'fees' | 'history' | 'payment'
   latestAssessment?: Assessment
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  account: () => ({ id: 0, balance: 0, user_id: 0 }),
+  transactions: () => [],
+  fees: () => [],
   currentTerm: () => ({
     year: new Date().getFullYear(),
     semester: '1st Sem'
@@ -88,22 +80,22 @@ const paymentForm = useForm({
 
 // Computed: Assessment totals
 const totalAssessmentFee = computed(() => {
-  return props.latestAssessment?.total_assessment ?? 
-    props.fees.reduce((sum, fee) => sum + Number(fee.amount), 0)
+  return props.latestAssessment?.total_assessment ??
+    (props.fees || []).reduce((sum, fee) => sum + Number(fee.amount || 0), 0)
 })
 
 const totalPaid = computed(() => {
-  return props.transactions
+  return (props.transactions || [])
     .filter(t => t.kind === 'payment' && t.status === 'paid')
-    .reduce((sum, t) => sum + Number(t.amount), 0)
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 })
 
 const remainingBalance = computed(() => {
-  const charges = props.transactions
+  const charges = (props.transactions || [])
     .filter(t => t.kind === 'charge')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
-  const payments = props.transactions
+  const payments = (props.transactions || [])
     .filter(t => t.kind === 'payment' && t.status === 'paid')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
@@ -119,7 +111,7 @@ const paymentPercentage = computed(() => {
 
 // Computed: Grouped fees by category
 const feesByCategory = computed(() => {
-  const grouped = props.fees.reduce((acc, fee) => {
+  const grouped = (props.fees || []).reduce((acc, fee) => {
     const category = fee.category || 'Other'
     if (!acc[category]) acc[category] = []
     acc[category].push(fee)
@@ -129,20 +121,20 @@ const feesByCategory = computed(() => {
   return Object.entries(grouped).map(([category, fees]) => ({
     category,
     fees,
-    total: fees.reduce((sum, f) => sum + Number(f.amount), 0)
+    total: fees.reduce((sum, f) => sum + Number(f.amount || 0), 0)
   }))
 })
 
 // Computed: Payment history
 const paymentHistory = computed(() => {
-  return props.transactions
+  return (props.transactions || [])
     .filter(t => t.kind === 'payment')
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 })
 
 // Computed: Pending charges
 const pendingCharges = computed(() => {
-  return props.transactions
+  return (props.transactions || [])
     .filter(t => t.kind === 'charge' && t.status === 'pending')
 })
 

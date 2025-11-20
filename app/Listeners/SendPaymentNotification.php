@@ -78,14 +78,22 @@ class SendPaymentNotification
         // Send in-app notification
         $this->notificationService->createNotification([
             'user_id' => $user->id,
-            'type' => 'payment_completed',
-            'title' => 'Payment Completed',
-            'message' => "Your payment of ₱{$payment->amount} has been successfully processed. Receipt #: {$payment->reference_number}",
-            'data' => [
-                'payment_id' => $payment->id,
-                'amount' => $payment->amount,
-                'reference_number' => $payment->reference_number,
-                'payment_method' => $payment->payment_method,
+            'notification_type' => 'payment_completed',
+            'channel' => 'in_app',
+            'recipient' => $user->email,
+            'content' => [
+                'title' => 'Payment Completed',
+                'message' => "Your payment of ₱{$payment->amount} has been successfully processed. Receipt #: {$payment->receipt_number}",
+                'actions' => [],
+                'icon' => 'CheckCircle',
+                'color' => 'green',
+                'data' => [
+                    'payment_id' => $payment->id,
+                    'amount' => $payment->amount,
+                    'reference_number' => $payment->reference_number,
+                    'receipt_number' => $payment->receipt_number,
+                    'payment_method' => $payment->payment_method,
+                ],
             ],
         ]);
 
@@ -135,14 +143,22 @@ class SendPaymentNotification
         // Send in-app notification
         $this->notificationService->createNotification([
             'user_id' => $user->id,
-            'type' => 'payment_failed',
-            'title' => 'Payment Failed',
-            'message' => "Your payment of ₱{$payment->amount} has failed. Reason: {$reason}",
-            'data' => [
-                'payment_id' => $payment->id,
-                'amount' => $payment->amount,
-                'reason' => $reason,
-                'payment_method' => $payment->payment_method,
+            'notification_type' => 'payment_failed',
+            'channel' => 'in_app',
+            'recipient' => $user->email,
+            'content' => [
+                'title' => 'Payment Failed',
+                'message' => "Your payment of ₱{$payment->amount} has failed. Reason: {$reason}",
+                'actions' => [],
+                'icon' => 'AlertCircle',
+                'color' => 'red',
+                'data' => [
+                    'payment_id' => $payment->id,
+                    'amount' => $payment->amount,
+                    'reason' => $reason,
+                    'reference_number' => $payment->reference_number,
+                    'payment_method' => $payment->payment_method,
+                ],
             ],
         ]);
 
@@ -178,14 +194,21 @@ class SendPaymentNotification
 
         $this->notificationService->createNotification([
             'user_id' => $user->id,
-            'type' => 'payment_status_change',
-            'title' => 'Payment Status Updated',
-            'message' => $message,
-            'data' => [
-                'payment_id' => $event->payment->id,
-                'old_status' => $event->oldStatus,
-                'new_status' => $event->newStatus,
-                'amount' => $event->payment->amount,
+            'notification_type' => 'payment_status_change',
+            'channel' => 'in_app',
+            'recipient' => $user->email,
+            'content' => [
+                'title' => 'Payment Status Updated',
+                'message' => $message,
+                'actions' => [],
+                'icon' => 'Clock',
+                'color' => 'blue',
+                'data' => [
+                    'payment_id' => $event->payment->id,
+                    'old_status' => $event->oldStatus,
+                    'new_status' => $event->newStatus,
+                    'amount' => $event->payment->amount,
+                ],
             ],
         ]);
     }
@@ -227,14 +250,21 @@ class SendPaymentNotification
         foreach ($adminUsers as $admin) {
             $this->notificationService->createNotification([
                 'user_id' => $admin->id,
-                'type' => 'admin_payment_' . $eventType,
-                'title' => 'Payment ' . ucfirst(str_replace('_', ' ', $eventType)),
-                'message' => $this->getAdminNotificationMessage($payment, $eventType, $reason),
-                'data' => [
-                    'payment_id' => $payment->id,
-                    'student_id' => $payment->student_id,
-                    'amount' => $payment->amount,
-                    'payment_method' => $payment->payment_method,
+                'notification_type' => 'admin_payment_' . $eventType,
+                'channel' => 'in_app',
+                'recipient' => $admin->email,
+                'content' => [
+                    'title' => 'Payment ' . ucfirst(str_replace('_', ' ', $eventType)),
+                    'message' => $this->getAdminNotificationMessage($payment, $eventType, $reason),
+                    'actions' => [],
+                    'icon' => 'Bell',
+                    'color' => 'blue',
+                    'data' => [
+                        'payment_id' => $payment->id,
+                        'student_id' => $payment->student_id,
+                        'amount' => $payment->amount,
+                        'payment_method' => $payment->payment_method,
+                    ],
                 ],
             ]);
         }
@@ -266,7 +296,7 @@ class SendPaymentNotification
      */
     private function getPaymentCompletedSmsMessage($payment): string
     {
-        return "Payment of ₱{$payment->amount} completed successfully. Receipt #: {$payment->reference_number}. Thank you!";
+        return "Payment of ₱{$payment->amount} completed successfully. Receipt #: {$payment->receipt_number}. Thank you!";
     }
 
     /**

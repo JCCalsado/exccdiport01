@@ -57,7 +57,7 @@ class StudentAccountController extends Controller
         return Inertia::render('Student/AccountOverview', [
             'account' => $user->account,
             'transactions' => $user->transactions ?? [],
-            'feeItems' => $feeItems,
+            'fees' => $feeItems,
             'currentTerm' => [
                 'year' => $year,
                 'semester' => $semester,
