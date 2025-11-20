@@ -215,21 +215,21 @@ const getKindBadge = (kind: string) => {
       </div>
 
       <!-- Current Balance Card (Students only) -->
-      <div v-if="!isStaff && account" class="p-6 rounded-xl border bg-gradient-to-r from-blue-50 to-indigo-50 shadow-sm">
+      <div v-if="!isStaff && props.account" class="p-6 rounded-xl border bg-gradient-to-r from-blue-50 to-indigo-50 shadow-sm">
         <div class="flex items-center justify-between">
           <div>
             <h2 class="font-semibold text-lg">Current Balance</h2>
             <p class="text-gray-500 text-sm">Your outstanding balance</p>
           </div>
           <div class="text-right">
-            <p 
+            <p
               class="text-4xl font-bold"
-              :class="(account.balance || 0) > 0 ? 'text-red-600' : 'text-green-600'"
+              :class="(props.account.balance || 0) > 0 ? 'text-red-600' : 'text-green-600'"
             >
-              {{ formatCurrency(Math.abs(account.balance || 0)) }}
+              {{ formatCurrency(Math.abs(props.account.balance || 0)) }}
             </p>
             <p class="text-sm text-gray-600 mt-1">
-              {{ (account.balance || 0) > 0 ? 'Amount Due' : 'All Paid' }}
+              {{ (props.account.balance || 0) > 0 ? 'Amount Due' : 'All Paid' }}
             </p>
           </div>
         </div>
