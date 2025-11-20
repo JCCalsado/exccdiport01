@@ -1,4 +1,5 @@
 <?php
+// database/seeders/ComprehensiveUserSeeder.php
 
 namespace Database\Seeders;
 
@@ -18,7 +19,10 @@ class ComprehensiveUserSeeder extends Seeder
         
         User::where('email', 'like', 'student%@ccdi.edu.ph')->delete();
 
-        // Keep admin and accounting staff (from original seeder)
+        // ═══════════════════════════════════════════════════════
+        // ADMIN & ACCOUNTING (No course/year_level needed)
+        // ═══════════════════════════════════════════════════════
+        
         $admin = User::firstOrCreate(
             ['email' => 'admin@ccdi.edu.ph'],
             [
@@ -53,6 +57,10 @@ class ComprehensiveUserSeeder extends Seeder
         );
         $accounting->account()->firstOrCreate([], ['balance' => 0]);
 
+        // ═══════════════════════════════════════════════════════
+        // STUDENTS (Academic data goes to students table ONLY)
+        // ═══════════════════════════════════════════════════════
+        
         // Filipino Names Pool
         $lastNames = [
             'Dela Cruz', 'Santos', 'Reyes', 'Garcia', 'Ramos',
@@ -63,11 +71,9 @@ class ComprehensiveUserSeeder extends Seeder
         ];
 
         $firstNames = [
-            // Male names
             'Juan', 'Jose', 'Pedro', 'Miguel', 'Carlos',
             'Antonio', 'Manuel', 'Francisco', 'Rafael', 'Eduardo',
             'Ricardo', 'Fernando', 'Roberto', 'Andres', 'Javier',
-            // Female names
             'Maria', 'Ana', 'Carmen', 'Rosa', 'Teresa',
             'Elena', 'Isabel', 'Lucia', 'Sofia', 'Patricia',
             'Angela', 'Monica', 'Gloria', 'Diana', 'Cristina'
@@ -88,22 +94,19 @@ class ComprehensiveUserSeeder extends Seeder
         $yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
 
         $studentData = [];
-        $studentNumber = 1;
 
-        // Generate 100 students with specific distribution
-        // 70 Active, 10 Dropped, 20 Graduated
-        // 40 1st Year, 40 2nd Year, 10 4th Year with balance, 10 4th Year fully paid
+        // Generate 100 students with distribution:
+        // 40 Active 1st Year, 30 Active 2nd Year, 10 Dropped 2nd Year
+        // 10 Active 4th Year with balance, 10 Graduated 4th Year (fully paid)
 
-        // 40 Active 1st Year Students
         for ($i = 0; $i < 40; $i++) {
             $studentData[] = [
                 'year_level' => '1st Year',
                 'status' => 'active',
-                'balance' => rand(5000, 15000), // Has balance
+                'balance' => rand(5000, 15000),
             ];
         }
 
-        // 30 Active 2nd Year Students (30 out of 40 total 2nd year)
         for ($i = 0; $i < 30; $i++) {
             $studentData[] = [
                 'year_level' => '2nd Year',
@@ -112,16 +115,14 @@ class ComprehensiveUserSeeder extends Seeder
             ];
         }
 
-        // 10 Dropped 2nd Year Students
         for ($i = 0; $i < 10; $i++) {
             $studentData[] = [
                 'year_level' => '2nd Year',
                 'status' => 'inactive',
-                'balance' => rand(5000, 20000), // Typically have balances
+                'balance' => rand(5000, 20000),
             ];
         }
 
-        // 10 Active 4th Year with Remaining Balance
         for ($i = 0; $i < 10; $i++) {
             $studentData[] = [
                 'year_level' => '4th Year',
@@ -130,19 +131,16 @@ class ComprehensiveUserSeeder extends Seeder
             ];
         }
 
-        // 10 Graduated 4th Year (Fully Paid)
         for ($i = 0; $i < 10; $i++) {
             $studentData[] = [
                 'year_level' => '4th Year',
                 'status' => 'graduated',
-                'balance' => 0, // Fully paid
+                'balance' => 0,
             ];
         }
 
-        // Shuffle to randomize
         shuffle($studentData);
 
-        // Status mapping
         $statusMap = [
             'active' => User::STATUS_ACTIVE,
             'graduated' => User::STATUS_GRADUATED,
@@ -162,36 +160,34 @@ class ComprehensiveUserSeeder extends Seeder
             $course = $courses[array_rand($courses)];
             $address = $addresses[array_rand($addresses)];
             
-            $studentId = '2025-' . str_pad($studentNumber, 4, '0', STR_PAD_LEFT);
-            $email = 'student' . $studentNumber . '@ccdi.edu.ph';
+            $studentId = '2025-' . str_pad($index + 1, 4, '0', STR_PAD_LEFT);
+            $email = 'student' . ($index + 1) . '@ccdi.edu.ph';
             
-            // Generate birthday based on year level
             $yearLevelNum = (int) substr($data['year_level'], 0, 1);
-            $birthYear = 2025 - 18 - $yearLevelNum + 1; // Approximate age
+            $birthYear = 2025 - 18 - $yearLevelNum + 1;
             $birthday = $birthYear . '-' . str_pad(rand(1, 12), 2, '0', STR_PAD_LEFT) . '-' . str_pad(rand(1, 28), 2, '0', STR_PAD_LEFT);
 
+            // ✅ CREATE USER (NO course/year_level)
             $user = User::create([
                 'last_name' => $lastName,
                 'first_name' => $firstName,
                 'middle_initial' => $middleInitial,
                 'email' => $email,
-                'password' => Hash::make('password'), // All students use 'password'
+                'password' => Hash::make('password'),
                 'role' => 'student',
                 'student_id' => $studentId,
                 'status' => $statusMap[$data['status']],
-                'course' => $course,
-                'year_level' => $data['year_level'],
                 'birthday' => $birthday,
                 'phone' => '0917' . rand(1000000, 9999999),
                 'address' => $address,
             ]);
 
-            // Create account with balance
+            // ✅ CREATE ACCOUNT
             $user->account()->create([
-                'balance' => -$data['balance'] // Negative means they owe
+                'balance' => -$data['balance']
             ]);
 
-            // Create Student profile
+            // ✅ CREATE STUDENT (course/year_level HERE)
             Student::create([
                 'user_id' => $user->id,
                 'student_id' => $studentId,
@@ -208,14 +204,11 @@ class ComprehensiveUserSeeder extends Seeder
                 'total_balance' => $data['balance'],
             ]);
 
-            $studentNumber++;
+            if (($index + 1) % 10 === 0) {
+                $this->command->info("  ✓ Created " . ($index + 1) . " students...");
+            }
         }
 
-        $this->command->info('✓ Successfully seeded 100 students:');
-        $this->command->info('  - 70 Active (40 1st year, 30 2nd year, 10 4th year with balance)');
-        $this->command->info('  - 10 Dropped (2nd year)');
-        $this->command->info('  - 20 Graduated (4th year, fully paid)');
-        $this->command->info('  - All passwords: password');
-        $this->command->info('  - Email format: student1@ccdi.edu.ph to student100@ccdi.edu.ph');
+        $this->command->info('✓ Successfully seeded 100 students');
     }
 }
