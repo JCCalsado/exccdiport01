@@ -1,4 +1,5 @@
 <?php
+// app/Models/User.php
 
 namespace App\Models;
 
@@ -27,11 +28,9 @@ class User extends Authenticatable
         'birthday',
         'address',
         'phone',
-        'student_id',
+        'student_id',      // Keep for quick lookup
         'profile_picture',
-        'course',
-        'year_level',
-        'faculty',
+        'faculty',         // For staff only
         'status',
         'role',
     ];
@@ -41,8 +40,7 @@ class User extends Authenticatable
         'remember_token',
     ];
 
-    // Set appends property to include virtual attributes
-    protected $appends = ['name'];
+    protected $appends = ['name', 'full_name'];
 
     protected function casts(): array
     {
@@ -54,7 +52,8 @@ class User extends Authenticatable
         ];
     }
 
-    // Relationships
+    // =================== RELATIONSHIPS ===================
+    
     public function student(): HasOne
     {
         return $this->hasOne(Student::class);
@@ -70,9 +69,10 @@ class User extends Authenticatable
         return $this->hasMany(Transaction::class);
     }
 
+    // =================== ACCESSORS ===================
+    
     /**
-     * Get user's full name.
-     * This is main accessor that will be serialized in API responses.
+     * Get full name (Last, First MI.)
      */
     public function getNameAttribute(): string
     {
@@ -81,68 +81,74 @@ class User extends Authenticatable
     }
 
     /**
-     * Get user's full name (alternative format).
-     * Use this for display purposes where you want "Last, First MI."
+     * Get full name alternative format (First Last)
      */
     public function getFullNameAttribute(): string
     {
-        $mi = $this->middle_initial ? "{$this->middle_initial}." : '';
-        return "{$this->last_name}, {$this->first_name} {$mi}";
+        $mi = $this->middle_initial ? "{$this->middle_initial}. " : '';
+        return "{$this->first_name} {$mi}{$this->last_name}";
     }
 
     /**
-     * Get validation rules for user updates
+     * Dynamic accessor for course (from student relationship)
      */
-    public static function getValidationRules($userId = null): array
+    public function getCourseAttribute(): ?string
     {
-        return [
-            'student_id' => 'nullable|string|unique:users,student_id,' . $userId,
-            'address' => 'nullable|string|max:255',
-            'course' => 'nullable|string|max:100',
-            'year_level' => 'nullable|string|max:50',
-            'faculty' => 'nullable|string|max:100',
-            'status' => 'required|in:active,graduated,dropped',
-            'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-        ];
+        return $this->student?->course;
     }
 
     /**
-     * Check if user is admin
+     * Dynamic accessor for year_level (from student relationship)
      */
+    public function getYearLevelAttribute(): ?string
+    {
+        return $this->student?->year_level;
+    }
+
+    // =================== ROLE CHECKERS ===================
+    
     public function isAdmin(): bool
     {
         return $this->role === UserRoleEnum::ADMIN;
     }
 
-    /**
-     * Check if user is accounting staff
-     */
     public function isAccounting(): bool
     {
         return $this->role === UserRoleEnum::ACCOUNTING;
     }
 
-    /**
-     * Check if user is student
-     */
     public function isStudent(): bool
     {
         return $this->role === UserRoleEnum::STUDENT;
     }
 
-    /**
-     * Check if user has admin or accounting role
-     */
     public function isStaff(): bool
     {
         return $this->isAdmin() || $this->isAccounting();
     }
 
     /**
-     * Get user role label
+     * Get role label
      */
     public function getRoleLabelAttribute(): string
     {
         return $this->role->label() ?? 'Unknown';
+    }
+
+    // =================== SCOPES ===================
+    
+    public function scopeStudents($query)
+    {
+        return $query->where('role', UserRoleEnum::STUDENT);
+    }
+
+    public function scopeStaff($query)
+    {
+        return $query->whereIn('role', [UserRoleEnum::ADMIN, UserRoleEnum::ACCOUNTING]);
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('status', self::STATUS_ACTIVE);
     }
 }

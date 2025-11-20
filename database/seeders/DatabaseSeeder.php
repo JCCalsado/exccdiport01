@@ -1,4 +1,5 @@
 <?php
+// database/seeders/DatabaseSeeder.php
 
 namespace Database\Seeders;
 
@@ -8,57 +9,99 @@ use Illuminate\Support\Facades\DB;
 class DatabaseSeeder extends Seeder
 {
     /**
-     * Seed the application's database.
+     * Complete database seeding with proper order and cleanup
      */
     public function run(): void
     {
-        $this->command->info('🚀 Starting comprehensive database seeding...');
+        $this->command->info('🚀 Starting School Payment Portal Seeding...');
         $this->command->newLine();
 
-        // Clear existing data (optional - comment out if you want to preserve data)
-        $this->command->info('🗑️  Clearing existing data...');
-        DB::table('payments')->delete();
-        DB::table('transactions')->delete();
-        DB::table('student_assessments')->delete();
-        DB::table('students')->delete();
-        DB::table('accounts')->delete();
-        DB::table('subjects')->delete();
-        DB::table('fees')->delete();
-        DB::table('notifications')->delete();
-        // Note: We don't delete users here as ComprehensiveUserSeeder handles it
-        
-        $this->command->info('✓ Existing data cleared');
-        $this->command->newLine();
+        // STEP 1: Clean slate (optional - use with caution)
+        if ($this->command->confirm('⚠️  Clear existing data?', false)) {
+            $this->cleanDatabase();
+        }
 
-        // Seed in correct order
-        $this->command->info('📚 Step 1: Seeding Users (Admin, Accounting, 100 Students)...');
+        // STEP 2: Seed Users & Students (SINGLE SOURCE OF TRUTH)
+        $this->command->info('📚 Step 1: Creating Users & Students...');
         $this->call(ComprehensiveUserSeeder::class);
         $this->command->newLine();
 
-        $this->command->info('📖 Step 2: Seeding Subjects (OBE Curriculum)...');
+        // STEP 3: Seed Subjects (OBE Curriculum)
+        $this->command->info('📖 Step 2: Loading Subjects...');
         $this->call(EnhancedSubjectSeeder::class);
         $this->command->newLine();
 
-        $this->command->info('💰 Step 3: Seeding Fees...');
+        // STEP 4: Seed Fees
+        $this->command->info('💰 Step 3: Setting up Fees...');
         $this->call(FeeSeeder::class);
         $this->command->newLine();
 
-        $this->command->info('📋 Step 4: Creating Student Assessments & Transactions...');
+        // STEP 5: Create Student Fee Items (NEW)
+        $this->command->info('📋 Step 4: Assigning Fees to Students...');
+        $this->call(StudentFeeItemSeeder::class);
+        $this->command->newLine();
+
+        // STEP 6: Create Assessments & Transactions
+        $this->command->info('📊 Step 5: Generating Assessments...');
         $this->call(ComprehensiveAssessmentSeeder::class);
         $this->command->newLine();
 
-        $this->command->info('🔔 Step 5: Seeding Notifications...');
+        // STEP 7: Seed Notifications
+        $this->command->info('🔔 Step 6: Creating Notifications...');
         $this->call(NotificationSeeder::class);
         $this->command->newLine();
 
-        $this->command->info('✅ Database seeding completed successfully!');
-        $this->command->newLine();
-        
+        $this->command->info('✅ Seeding completed successfully!');
         $this->displaySummary();
     }
 
+    /**
+     * Clean database (use with caution!)
+     */
+    private function cleanDatabase(): void
+    {
+        $this->command->warn('🗑️  Clearing existing data...');
+
+        // Disable foreign key checks
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+
+        // Truncate in reverse dependency order
+        $tables = [
+            'payment_gateway_details',
+            'audit_logs',
+            'notification_logs',
+            'notifications',
+            'payments',
+            'transactions',
+            'student_assessments',
+            'student_enrollments',
+            'student_fee_items',
+            'students',
+            'accounts',
+            'subjects',
+            'fees',
+            // Don't truncate users if you want to keep admin
+            'users',
+        ];
+
+        foreach ($tables as $table) {
+            DB::table($table)->truncate();
+            $this->command->line("  ✓ Cleared {$table}");
+        }
+
+        // Re-enable foreign key checks
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        
+        $this->command->info('✓ Database cleaned');
+        $this->command->newLine();
+    }
+
+    /**
+     * Display seeding summary
+     */
     private function displaySummary(): void
     {
+        $this->command->newLine();
         $this->command->info('📊 SEEDING SUMMARY');
         $this->command->info('═══════════════════════════════════════════════════════');
         
@@ -67,22 +110,13 @@ class DatabaseSeeder extends Seeder
         $accountingCount = \App\Models\User::where('role', 'accounting')->count();
         $studentCount = \App\Models\User::where('role', 'student')->count();
         
-        $activeStudents = \App\Models\User::where('role', 'student')
-            ->where('status', \App\Models\User::STATUS_ACTIVE)->count();
-        $droppedStudents = \App\Models\User::where('role', 'student')
-            ->where('status', \App\Models\User::STATUS_DROPPED)->count();
-        $graduatedStudents = \App\Models\User::where('role', 'student')
-            ->where('status', \App\Models\User::STATUS_GRADUATED)->count();
-        
-        $firstYear = \App\Models\User::where('role', 'student')
-            ->where('year_level', '1st Year')->count();
-        $secondYear = \App\Models\User::where('role', 'student')
-            ->where('year_level', '2nd Year')->count();
-        $fourthYear = \App\Models\User::where('role', 'student')
-            ->where('year_level', '4th Year')->count();
+        $activeStudents = \App\Models\Student::where('status', 'enrolled')->count();
+        $graduatedStudents = \App\Models\Student::where('status', 'graduated')->count();
+        $inactiveStudents = \App\Models\Student::where('status', 'inactive')->count();
         
         $subjectCount = \App\Models\Subject::count();
         $feeCount = \App\Models\Fee::count();
+        $feeItemCount = \App\Models\StudentFeeItem::count();
         $assessmentCount = \App\Models\StudentAssessment::count();
         $transactionCount = \App\Models\Transaction::count();
         $paymentCount = \App\Models\Payment::count();
@@ -95,22 +129,20 @@ class DatabaseSeeder extends Seeder
                 ['├─ Accounting Staff', $accountingCount],
                 ['└─ Students', $studentCount],
                 ['', ''],
-                ['Student Status Distribution', ''],
+                ['Student Status', ''],
                 ['├─ Active', $activeStudents],
-                ['├─ Dropped', $droppedStudents],
-                ['└─ Graduated', $graduatedStudents],
+                ['├─ Graduated', $graduatedStudents],
+                ['└─ Inactive', $inactiveStudents],
                 ['', ''],
-                ['Year Level Distribution', ''],
-                ['├─ 1st Year', $firstYear],
-                ['├─ 2nd Year', $secondYear],
-                ['└─ 4th Year', $fourthYear],
-                ['', ''],
-                ['Academic Data', ''],
+                ['Academic Setup', ''],
                 ['├─ Subjects', $subjectCount],
-                ['├─ Fees', $feeCount],
-                ['├─ Student Assessments', $assessmentCount],
+                ['├─ Fee Types', $feeCount],
+                ['└─ Fee Assignments', $feeItemCount],
+                ['', ''],
+                ['Financial Records', ''],
+                ['├─ Assessments', $assessmentCount],
                 ['├─ Transactions', $transactionCount],
-                ['└─ Payment Records', $paymentCount],
+                ['└─ Payments', $paymentCount],
             ]
         );
         
@@ -122,17 +154,16 @@ class DatabaseSeeder extends Seeder
             [
                 ['Admin', 'admin@ccdi.edu.ph', 'password'],
                 ['Accounting', 'accounting@ccdi.edu.ph', 'password'],
-                ['Students', 'student1@ccdi.edu.ph to student100@ccdi.edu.ph', 'password'],
+                ['Student (example)', 'student1@ccdi.edu.ph', 'password'],
             ]
         );
         
         $this->command->newLine();
-        $this->command->info('💡 TIPS');
+        $this->command->info('💡 NEXT STEPS');
         $this->command->info('═══════════════════════════════════════════════════════');
-        $this->command->info('• All students have complete assessments and transactions');
-        $this->command->info('• Students with balances have payment history');
-        $this->command->info('• Graduated students (4th year) have zero balance');
-        $this->command->info('• Run: php artisan db:seed --class=DatabaseSeeder to re-seed');
+        $this->command->line('1. Run: php artisan migrate:fresh --seed (to reset everything)');
+        $this->command->line('2. Visit: http://your-domain/login');
+        $this->command->line('3. Test with: student1@ccdi.edu.ph / password');
         $this->command->newLine();
     }
 }
