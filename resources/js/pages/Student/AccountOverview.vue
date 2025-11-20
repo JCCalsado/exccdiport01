@@ -142,7 +142,7 @@ const paymentHistory = computed(() => {
 
 // Computed: Pending charges
 const pendingCharges = computed(() => {
-  return props.transactions
+  return (props.transactions || [])
     .filter(t => t.kind === 'charge' && t.status === 'pending')
 })
 
