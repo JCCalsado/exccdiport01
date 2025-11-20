@@ -269,8 +269,8 @@ const getKindBadge = (kind: string) => {
           <div>
             <div class="flex items-center gap-3">
               <h2 class="font-bold text-xl">{{ termKey }}</h2>
-              <Badge 
-                v-if="termKey === currentTerm"
+              <Badge
+                v-if="props.currentTerm && termKey === props.currentTerm"
                 variant="info"
               >
                 Current
