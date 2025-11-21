@@ -10,6 +10,7 @@ return new class extends Migration
     {
         Schema::create('student_assessments', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('account_id')->constrained('accounts')->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('assessment_number')->unique(); // e.g., ASS-2025-0001
             $table->string('year_level');

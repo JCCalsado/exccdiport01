@@ -87,6 +87,7 @@ class ComprehensiveAssessmentSeeder extends Seeder
 
             // Create student assessment
             $assessment = StudentAssessment::create([
+                'account_id' => $student->account_id,
                 'user_id' => $student->id,
                 'assessment_number' => StudentAssessment::generateAssessmentNumber(),
                 'year_level' => $student->year_level,
@@ -107,10 +108,12 @@ class ComprehensiveAssessmentSeeder extends Seeder
                 $totalSubjectCost = $subjectCost + ($subject->has_lab ? $subject->lab_fee : 0);
 
                 Transaction::create([
+                    'account_id' => $student->account_id,
                     'user_id' => $student->id,
                     'reference' => 'SUBJ-' . strtoupper(Str::random(8)),
-                    'kind' => 'charge',
-                    'type' => 'Tuition',
+                    'kind' => 'charge',                       // charge | payment (keeps your current seeder usage)
+                    'category' => 'Tuition',                  // human readable category
+                    'type' => 'charge',                       // keep enum value consistent (charge/payment)
                     'year' => '2025',
                     'semester' => $semester,
                     'amount' => $totalSubjectCost,
@@ -129,11 +132,13 @@ class ComprehensiveAssessmentSeeder extends Seeder
             // Create transactions for other fees
             foreach ($otherFees as $fee) {
                 Transaction::create([
+                    'account_id' => $student->account_id,
                     'user_id' => $student->id,
                     'fee_id' => $fee->id,
                     'reference' => 'FEE-' . strtoupper(Str::random(8)),
                     'kind' => 'charge',
-                    'type' => $fee->category,
+                    'category' => $fee->category ?? 'Other Fee',
+                    'type' => 'charge',
                     'year' => '2025',
                     'semester' => $semester,
                     'amount' => $fee->amount,
@@ -164,6 +169,7 @@ class ComprehensiveAssessmentSeeder extends Seeder
                     // Create payment record
                     if ($student->student) {
                         Payment::create([
+                            'account_id' => $student->account_id,
                             'student_id' => $student->student->id,
                             'amount' => $paymentAmount,
                             'payment_method' => ['cash', 'gcash', 'bank_transfer'][rand(0, 2)],
@@ -174,13 +180,15 @@ class ComprehensiveAssessmentSeeder extends Seeder
                         ]);
                     }
 
-                    // Create transaction record
+                    // Create transaction record for payout
                     Transaction::create([
+                        'account_id' => $student->account_id,
                         'user_id' => $student->id,
                         'reference' => 'PAY-' . strtoupper(Str::random(8)),
                         'payment_channel' => ['cash', 'gcash', 'bank_transfer'][rand(0, 2)],
                         'kind' => 'payment',
-                        'type' => 'Payment',
+                        'category' => 'Payment',
+                        'type' => 'payment',
                         'year' => '2025',
                         'semester' => $semester,
                         'amount' => $paymentAmount,

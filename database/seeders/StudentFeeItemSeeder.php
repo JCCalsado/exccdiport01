@@ -20,6 +20,13 @@ class StudentFeeItemSeeder extends Seeder
         $this->command->info("Creating fee items for {$students->count()} students...");
 
         foreach ($students as $student) {
+
+            // 🔥 Ensure student has an account_id
+            if (!$student->account_id) {
+                $this->command->warn("⚠️ Student {$student->id} has no account_id. Skipping...");
+                continue;
+            }
+
             // Get fees for this student's year level
             $fees = Fee::active()
                 ->where('year_level', $student->year_level)
@@ -28,6 +35,7 @@ class StudentFeeItemSeeder extends Seeder
                 ->get();
 
             foreach ($fees as $fee) {
+
                 // Check if already assigned
                 $exists = StudentFeeItem::where('student_id', $student->id)
                     ->where('fee_id', $fee->id)
@@ -38,6 +46,7 @@ class StudentFeeItemSeeder extends Seeder
                 if (!$exists) {
                     StudentFeeItem::create([
                         'student_id' => $student->id,
+                        'account_id' => $student->account_id,     // 👈 REQUIRED FIX
                         'fee_id' => $fee->id,
                         'school_year' => $schoolYear,
                         'semester' => $semester,
