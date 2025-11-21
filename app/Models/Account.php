@@ -21,4 +21,13 @@ class Account extends Model
     {
         return $this->hasMany(Transaction::class);
     }
+
+    public static function generateAccountNumber()
+    {
+        do {
+            $number = 'ACC-' . str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
+        } while (self::where('account_number', $number)->exists());
+
+        return $number;
+    }
 }
